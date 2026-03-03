@@ -16,10 +16,12 @@ if [[ -z "${PREVIOUS_VERSION}" ]]; then
     exit 1
 fi
 
+echo "=================================================================================="
 echo "PREVIOUS_VERSION: ${PREVIOUS_VERSION}"
 echo "VERSION: ${VERSION}"
 echo "!!! IMPORTANT !!!"
 echo "Please, ensure PREVIOUS_VERSION=$PREVIOUS_VERSION is what is needed"
+echo "=================================================================================="
 read -n 1 -r -s -p $'Press enter to continue...\n'
 
 OPERATORHUB_DIR="${SRC_ROOT}/deploy/operatorhub"
