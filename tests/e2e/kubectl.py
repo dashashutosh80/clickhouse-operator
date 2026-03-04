@@ -76,35 +76,51 @@ def delete_chi(chi, ns=None, wait=True, ok_undeleted = False, ok_to_fail=False, 
     if settings.no_cleanup:
         print(f"NO_CLEANUP is set, skipping delete_chi: {chi}")
         return
+
     delete_kind("chi", chi, ns=ns, ok_to_fail=ok_to_fail, shell=shell)
+
     if wait:
-        wait_objects(
-            chi,
-            {
-                "statefulset": 0,
-                "pod": 0,
-                "service": 0
-            },
-            ns,
-            shell=shell
-        )
+        wait_object("chi", chi, count=0, ns=ns, shell=shell)
 
-        with Then("All objects should be deleted"):
-            cnt = get_count("all", chi=chi, ns=ns, shell=shell)
-            not_deleted_objects = get_obj_names(chi, "pod,service,sts,pvc,cm,pdb,secret", ns=ns, shell=shell)
-            not_deleted_objects_ext = get_obj_names_grepped("pod,service,sts,pvc,cm,pdb,secret", grep=chi, ns=ns, shell=shell)
-            if len(not_deleted_objects) > 0 or len(not_deleted_objects_ext) > 0:
+        with Then(f"All {chi} objects should be deleted"):
+            chi_objects     = get_obj_names(chi, "pod,service,sts,pvc,cm,pdb,secret", kind = 'chi', ns=ns, shell=shell)
+            chi_objects_ext = get_obj_names_grepped("pod,service,sts,pvc,cm,pdb,secret", grep=chi, ns=ns, shell=shell)
+            name_collision = get_count("chk", chk=chi, ns=ns, shell=shell)
+
+            if len(chi_objects_ext)>0 and not name_collision:
                 print("WARNING: some objects were not deleted:")
-                print(*not_deleted_objects_ext, sep='\n')
-
-            assert ok_undeleted or cnt == 0
+                print(*chi_objects_ext, sep='\n')
+                assert ok_undeleted or len(chi_objects_ext)==0
+            elif len(chi_objects) > 0:
+                print("WARNING: some objects were not deleted:")
+                print(chi_objects, sep='\n')
+                assert ok_undeleted or len(chi_objects)==0
 
 
 def delete_chk(chk, ns=None, wait=True, ok_to_fail=False, shell=None):
     if settings.no_cleanup:
         print(f"NO_CLEANUP is set, skipping delete_chk: {chk}")
         return
+
     delete_kind("chk", chk, ns=ns, ok_to_fail=ok_to_fail, shell=shell)
+
+    if wait:
+        # def wait_object(kind, name, names=[], label="", count=1, ns=None, retries=max_retries, backoff=5, shell=None):
+        wait_object("chk", chk, count=0, ns=ns, shell=shell)
+
+        with Then(f"All {chk} objects should be deleted"):
+            chk_objects     = get_obj_names(chk, "pod,service,sts,pvc,cm,pdb,secret", kind = 'chk', ns=ns, shell=shell)
+            chk_objects_ext = get_obj_names_grepped("pod,service,sts,pvc,cm,pdb,secret", grep=chk, ns=ns, shell=shell)
+            name_collision = get_count("chi", chi=chk, ns=ns, shell=shell)
+
+            if len(chk_objects_ext)>0 and not name_collision:
+                print("WARNING: some objects were not deleted:")
+                print(*chk_objects_ext, sep='\n')
+                assert len(chk_objects_ext)==0
+            elif len(chk_objects) > 0:
+                print("WARNING: some objects were not deleted:")
+                print(chk_objects, sep='\n')
+                assert len(chk_objects)==0
 
 
 def delete_all_chi(ns=None):
@@ -278,9 +294,11 @@ def delete_ns(ns = None, delete_chi=False, ok_to_fail=False, timeout=1000):
             assert "Error" in out
 
 
-def get_count(kind, name="", label="", chi="", ns=None, shell=None):
+def get_count(kind, name="", label="", chi="", chk ="", ns=None, shell=None):
     if chi != "" and label == "":
         label = f"-l clickhouse.altinity.com/chi={chi}"
+    if chk != "" and label == "":
+        label = f"-l clickhouse-keeper.altinity.com/chk={chk}"
 
     if ns is None:
         ns = current().context.test_namespace
@@ -389,11 +407,11 @@ def wait_object(kind, name, names=[], label="", count=1, ns=None, retries=max_re
     with Then(f"{count} {kind}(s) {name} should be created"):
         for i in range(1, retries):
             cur_count = get_count(kind, ns=ns, name=name, label=label, shell=shell)
-            if cur_count >= count:
+            if cur_count == count:
                 break
             with Then(f"Not ready yet. {cur_count}/{count}. Wait for {i * backoff} seconds"):
                 time.sleep(i * backoff)
-        assert cur_count >= count, error()
+        assert cur_count == count, error()
 
 
 def wait_command(command, result, count=1, ns=None, retries=max_retries):
@@ -561,9 +579,13 @@ def get_pod_names(chi_name, ns=None, shell=None):
     return get_obj_names(chi_name, "pods", ns, shell)
 
 
-def get_obj_names(chi_name, obj_type="pods", ns=None, shell=None):
+def get_obj_names(chi_name, obj_type="pods", kind = "chi", ns=None, shell=None):
+    if kind == "chi":
+        label = f"clickhouse.altinity.com/chi={chi_name}"
+    elif kind == "chk":
+        label = f"clickhouse-keeper.altinity.com/chk={chi_name}"
     obj_names = launch(
-        f"get {obj_type} -o=custom-columns=name:.metadata.name -l clickhouse.altinity.com/chi={chi_name}",
+        f"get {obj_type} -o=custom-columns=name:.metadata.name -l {label}",
         ns=ns,
     ).splitlines()
     return obj_names[1:]

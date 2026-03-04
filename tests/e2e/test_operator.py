@@ -5646,6 +5646,9 @@ def test_020000(self):
             assert kubectl.get_count('sts', label = label) == 1
             assert kubectl.get_count('pod', label = label) == 0
 
+    with Then("Delete CHK"):
+        kubectl.delete_chk(chk)
+
     with Finally("I clean up"):
         delete_test_namespace()
 
