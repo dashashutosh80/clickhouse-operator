@@ -580,12 +580,13 @@ def get_pod_names(chi_name, ns=None, shell=None):
 
 
 def get_obj_names(chi_name, obj_type="pods", kind = "chi", ns=None, shell=None):
+    label = ""
     if kind == "chi":
-        label = f"clickhouse.altinity.com/chi={chi_name}"
+        label = f"-l clickhouse.altinity.com/chi={chi_name}"
     elif kind == "chk":
-        label = f"clickhouse-keeper.altinity.com/chk={chi_name}"
+        label = f"-l clickhouse-keeper.altinity.com/chk={chi_name}"
     obj_names = launch(
-        f"get {obj_type} -o=custom-columns=name:.metadata.name -l {label}",
+        f"get {obj_type} -o=custom-columns=name:.metadata.name {label}",
         ns=ns,
     ).splitlines()
     return obj_names[1:]
