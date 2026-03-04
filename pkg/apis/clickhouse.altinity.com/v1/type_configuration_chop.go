@@ -474,8 +474,8 @@ type ReconcileHost struct {
 	Drop ReconcileHostDrop `json:"drop" yaml:"drop"`
 }
 
-func (rh ReconcileHost) Normalize(readiness *types.StringBool, overwrite bool) ReconcileHost {
-	rh.Wait = rh.Wait.Normalize(readiness, overwrite)
+func (rh ReconcileHost) Normalize() ReconcileHost {
+	rh.Wait = rh.Wait.Normalize()
 	rh.Drop = rh.Drop.Normalize()
 	return rh
 }
@@ -495,7 +495,7 @@ type ReconcileHostWait struct {
 	Probes   *ReconcileHostWaitProbes   `json:"probes,omitempty"   yaml:"probes,omitempty"`
 }
 
-func (wait ReconcileHostWait) Normalize(readiness *types.StringBool, overwrite bool) ReconcileHostWait {
+func (wait ReconcileHostWait) Normalize() ReconcileHostWait {
 	if wait.Replicas == nil {
 		wait.Replicas = &ReconcileHostWaitReplicas{}
 	}
@@ -506,13 +506,7 @@ func (wait ReconcileHostWait) Normalize(readiness *types.StringBool, overwrite b
 	}
 
 	if wait.Probes == nil {
-		// Apply default when probes are not specified at all.
-		wait.Probes = &ReconcileHostWaitProbes{
-			Readiness: readiness,
-		}
-	} else if overwrite {
-		// Force override even when a value is already set.
-		wait.Probes.Readiness = readiness
+		wait.Probes = &ReconcileHostWaitProbes{}
 	}
 
 	return wait
@@ -1060,7 +1054,7 @@ func (c *OperatorConfig) normalizeSectionReconcileStatefulSet() {
 }
 
 func (c *OperatorConfig) normalizeSectionReconcileHost() {
-	c.Reconcile.Host = c.Reconcile.Host.Normalize(nil, false)
+	c.Reconcile.Host = c.Reconcile.Host.Normalize()
 }
 
 func (c *OperatorConfig) normalizeSectionClickHouseConfigurationUserDefault() {
