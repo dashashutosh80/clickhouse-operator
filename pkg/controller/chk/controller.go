@@ -16,20 +16,21 @@ package chk
 
 import (
 	"context"
-	"github.com/altinity/clickhouse-operator/pkg/chop"
 	"time"
 
-	log "github.com/altinity/clickhouse-operator/pkg/announcer"
-	apiChk "github.com/altinity/clickhouse-operator/pkg/apis/clickhouse-keeper.altinity.com/v1"
-	api "github.com/altinity/clickhouse-operator/pkg/apis/clickhouse.altinity.com/v1"
-	"github.com/altinity/clickhouse-operator/pkg/controller/chk/kube"
-	"github.com/altinity/clickhouse-operator/pkg/interfaces"
-	"github.com/altinity/clickhouse-operator/pkg/model/managers"
-	"github.com/altinity/clickhouse-operator/pkg/util"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	apiMachinery "k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	log "github.com/altinity/clickhouse-operator/pkg/announcer"
+	apiChk "github.com/altinity/clickhouse-operator/pkg/apis/clickhouse-keeper.altinity.com/v1"
+	api "github.com/altinity/clickhouse-operator/pkg/apis/clickhouse.altinity.com/v1"
+	"github.com/altinity/clickhouse-operator/pkg/chop"
+	"github.com/altinity/clickhouse-operator/pkg/controller/chk/kube"
+	"github.com/altinity/clickhouse-operator/pkg/interfaces"
+	"github.com/altinity/clickhouse-operator/pkg/model/managers"
+	"github.com/altinity/clickhouse-operator/pkg/util"
 )
 
 // Controller reconciles a ClickHouseKeeper object
