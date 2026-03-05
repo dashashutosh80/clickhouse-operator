@@ -126,7 +126,7 @@ func (s *Status) Fill(params *FillStatusParams) {
 		s.HostsDeleteCount = params.HostsDeleteCount
 		s.HostsDeletedCount = params.HostsDeletedCount
 		s.Pods = params.Pods
-		s.FQDNs = params.FQDNs
+		s.FQDNs = util.NormalizeFQDNs(params.FQDNs)
 		s.Endpoint = params.Endpoint
 		s.Endpoints = append([]string{}, params.Endpoints...)
 		s.NormalizedCR = params.NormalizedCR
@@ -163,6 +163,7 @@ func (s *Status) SetAndPushError(err string) {
 
 // PushHostReplicaCaughtUp pushes host to the list of hosts with replica caught-up
 func (s *Status) PushHostReplicaCaughtUp(host string) {
+	host = util.NormalizeFQDN(host)
 	doWithWriteLock(s, func(s *Status) {
 		if util.InArray(host, s.HostsWithReplicaCaughtUp) {
 			return
@@ -173,6 +174,7 @@ func (s *Status) PushHostReplicaCaughtUp(host string) {
 
 // PushHostTablesCreated pushes host to the list of hosts with created tables
 func (s *Status) PushHostTablesCreated(host string) {
+	host = util.NormalizeFQDN(host)
 	doWithWriteLock(s, func(s *Status) {
 		if util.InArray(host, s.HostsWithTablesCreated) {
 			return
@@ -187,7 +189,12 @@ func (s *Status) SyncHostTablesCreated() {
 		if s.FQDNs == nil {
 			return
 		}
-		s.HostsWithTablesCreated = util.IntersectStringArrays(s.HostsWithTablesCreated, s.FQDNs)
+		// Normalize both sides to handle status data written by older operator versions
+		// that may contain trailing dots.
+		s.HostsWithTablesCreated = util.IntersectStringArrays(
+			util.NormalizeFQDNs(s.HostsWithTablesCreated),
+			util.NormalizeFQDNs(s.FQDNs),
+		)
 	})
 }
 
@@ -783,15 +790,14 @@ func (s *Status) GetNormalizedCRCompleted() *ClickHouseKeeperInstallation {
 // GetHostsWithTablesCreated gets hosts with created tables
 func (s *Status) GetHostsWithTablesCreated() []string {
 	return getStringArrWithReadLock(s, func(s *Status) []string {
-		return s.HostsWithTablesCreated
+		return util.NormalizeFQDNs(s.HostsWithTablesCreated)
 	})
 }
 
 // GetHostsWithReplicaCaughtUp gets hosts with replica caught-up
 func (s *Status) GetHostsWithReplicaCaughtUp() []string {
 	return getStringArrWithReadLock(s, func(s *Status) []string {
-		return s.HostsWithReplicaCaughtUp
-
+		return util.NormalizeFQDNs(s.HostsWithReplicaCaughtUp)
 	})
 }
 
