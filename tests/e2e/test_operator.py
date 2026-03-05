@@ -43,6 +43,10 @@ def test_010001(self):
     print("Created objects:")
     print(*created_objects, sep='\n')
 
+    print("'nCHI status:")
+    chi_status = kubectl.get("chi", chi)["status"]
+    print(yaml.safe_dump(chi_status))
+
     kubectl.delete_chi(chi)
 
     with Finally("I clean up"):
@@ -1620,6 +1624,15 @@ def test_010014_0(self):
         check_schema_propagation(replicas)
 
         util.check_query_log(chi_name, ['CREATE'], [], query_log_start)
+
+        with Then("CHI status has all nodes in hostsWithTablesCreated"):
+            hosts_with_tables = kubectl.get("chi", chi_name)["status"]["hostsWithTablesCreated"]
+            print(yaml.safe_dump(hosts_with_tables))
+
+            domain = current().context.test_namespace + ".svc.cluster.local"
+
+            assert hosts_with_tables[2] == f"chi-{chi_name}-{cluster}-0-1.{domain}"
+            assert hosts_with_tables[3] == f"chi-{chi_name}-{cluster}-1-1.{domain}"
 
     with When("Restart (Zoo)Keeper pod"):
         if self.context.keeper_type == "zookeeper":
