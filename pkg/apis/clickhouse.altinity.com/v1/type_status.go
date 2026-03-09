@@ -126,8 +126,8 @@ func (s *Status) Fill(params *FillStatusParams) {
 		s.HostsDeletedCount = params.HostsDeletedCount
 		s.Pods = params.Pods
 		s.FQDNs = util.NormalizeFQDNs(params.FQDNs)
-		s.Endpoint = params.Endpoint
-		s.Endpoints = append([]string{}, params.Endpoints...)
+		s.Endpoint = util.NormalizeFQDN(params.Endpoint)
+		s.Endpoints = util.NormalizeFQDNs(params.Endpoints)
 		s.NormalizedCR = params.NormalizedCR
 	})
 }
