@@ -109,18 +109,27 @@ def delete_chk(chk, ns=None, wait=True, ok_to_fail=False, shell=None):
         wait_object("chk", chk, count=0, ns=ns, shell=shell)
 
         with Then(f"All {chk} objects should be deleted"):
-            chk_objects     = get_obj_names(chk, "pod,service,sts,pvc,cm,pdb,secret", kind = 'chk', ns=ns, shell=shell)
-            chk_objects_ext = get_obj_names_grepped("pod,service,sts,pvc,cm,pdb,secret", grep=chk, ns=ns, shell=shell)
-            name_collision = get_count("chi", chi=chk, ns=ns, shell=shell)
+            # Pod/PVC termination is async after STS deletion — poll until clean
+            chk_objects = []
+            chk_objects_ext = []
+            name_collision = 0
+            for i in range(1, max_retries):
+                chk_objects = get_obj_names(chk, "pod,service,sts,pvc,cm,pdb,secret", kind='chk', ns=ns, shell=shell)
+                chk_objects_ext = get_obj_names_grepped("pod,service,sts,pvc,cm,pdb,secret", grep=chk, ns=ns, shell=shell)
+                name_collision = get_count("chi", chi=chk, ns=ns, shell=shell)
+                if (len(chk_objects_ext) == 0 or name_collision) and len(chk_objects) == 0:
+                    break
+                with Then(f"Not ready. Wait for {i * 5} seconds"):
+                    time.sleep(i * 5)
 
-            if len(chk_objects_ext)>0 and not name_collision:
+            if len(chk_objects_ext) > 0 and not name_collision:
                 print("WARNING: some objects were not deleted:")
                 print(*chk_objects_ext, sep='\n')
-                assert len(chk_objects_ext)==0
+                assert len(chk_objects_ext) == 0
             elif len(chk_objects) > 0:
                 print("WARNING: some objects were not deleted:")
                 print(chk_objects, sep='\n')
-                assert len(chk_objects)==0
+                assert len(chk_objects) == 0
 
 
 def delete_all_chi(ns=None):
