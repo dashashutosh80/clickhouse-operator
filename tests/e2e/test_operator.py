@@ -720,7 +720,20 @@ def test_010011_1(self):
                 print(f"default user's IPs: {ips_l}")
                 assert len(ips) == 5
 
-            clickhouse.query("test-011-secured-cluster", "SYSTEM RELOAD CONFIG")
+            # Wait for ClickHouse to load updated config with network restrictions.
+            # Kubelet ConfigMap sync can take up to 60 seconds after operator reconcile completes.
+            for i in range(1, 12):
+                clickhouse.query("test-011-secured-cluster", "SYSTEM RELOAD CONFIG")
+                clickhouse.query("test-011-secured-cluster", "SYSTEM RELOAD CONFIG", host="chi-test-011-secured-cluster-default-1-0")
+                out = clickhouse.query_with_error(
+                    "test-011-insecured-cluster",
+                    "select 'OK'",
+                    host="chi-test-011-secured-cluster-default-1-0",
+                )
+                if out != "OK":
+                    break
+                print(f"Network restrictions not yet loaded on default-1-0, waiting 10s (attempt {i})")
+                time.sleep(10)
             with And("Connection to localhost should succeed with default user"):
                 out = clickhouse.query_with_error(
                     "test-011-secured-cluster",
@@ -5800,6 +5813,20 @@ def test_020003(self):
             if not "KEEPER_EXCEPTION" in out:
                 break
             clickhouse.query(chi, "select * from system.zookeeper_connection")
+
+    with And("Wait for DDL queue to be operational after keeper upgrade"):
+        # After keeper rolling restart, the DDLWorker ZK watcher can be lost during
+        # leader election. ZK connection succeeds before DDL queue is ready.
+        # Retry a lightweight DDL until it completes to ensure the queue is working.
+        for attempt in retries(timeout=120, delay=5):
+            out = clickhouse.query_with_error(
+                chi,
+                "DROP TABLE IF EXISTS __chk_ddl_check ON CLUSTER default",
+                advanced_params="--distributed_ddl_task_timeout=10",
+                timeout=15,
+            )
+            if "Exception" not in out and "Timeout" not in out:
+                break
 
     check_replication(chi, {0, 1}, 2)
 
