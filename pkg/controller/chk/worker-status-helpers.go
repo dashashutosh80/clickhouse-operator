@@ -42,7 +42,12 @@ func (w *worker) areUsableOldAndNew(old, new *apiChk.ClickHouseKeeperInstallatio
 
 // isAfterFinalizerInstalled checks whether we are just installed finalizer
 func (w *worker) isAfterFinalizerInstalled(old, new *apiChk.ClickHouseKeeperInstallation) bool {
-	return false
+	if !w.areUsableOldAndNew(old, new) {
+		return false
+	}
+
+	finalizerIsInstalled := len(old.Finalizers) == 0 && len(new.Finalizers) > 0
+	return w.isGenerationTheSame(old, new) && finalizerIsInstalled
 }
 
 // isGenerationTheSame checks whether old and new CHI have the same generation
