@@ -18,8 +18,10 @@ import (
 	"context"
 	"time"
 
+	apiExtensions "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	apiMachinery "k8s.io/apimachinery/pkg/runtime"
+	kubeTypes "k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -36,7 +38,8 @@ import (
 // Controller reconciles a ClickHouseKeeper object
 type Controller struct {
 	client.Client
-	Scheme *apiMachinery.Scheme
+	Scheme    *apiMachinery.Scheme
+	ExtClient apiExtensions.Interface
 
 	namer interfaces.INameManager
 	kube  interfaces.IKube
@@ -74,6 +77,16 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	c.new()
 	w := c.newWorker()
 
+	if w.ensureFinalizer(ctx, new) {
+		// Finalizer just installed; controller-runtime will re-reconcile
+		return ctrl.Result{}, nil
+	}
+
+	if w.deleteCHK(ctx, new) {
+		// CHK is being deleted
+		return ctrl.Result{}, nil
+	}
+
 	if new.Spec.Suspend.Value() {
 		log.V(2).M(new).F().Info("CR is suspended, skip reconcile")
 		return ctrl.Result{}, nil
@@ -82,6 +95,31 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	w.reconcileCR(context.TODO(), nil, new)
 
 	return ctrl.Result{}, nil
+}
+
+// installFinalizer adds the operator finalizer to the CHK CR.
+func (c *Controller) installFinalizer(ctx context.Context, chk *apiChk.ClickHouseKeeperInstallation) error {
+	cur := &apiChk.ClickHouseKeeperInstallation{}
+	if err := c.Client.Get(ctx, kubeTypes.NamespacedName{Namespace: chk.Namespace, Name: chk.Name}, cur); err != nil {
+		return err
+	}
+	if util.InArray(FinalizerName, cur.GetFinalizers()) {
+		return nil
+	}
+	base := cur.DeepCopy()
+	cur.SetFinalizers(append(cur.GetFinalizers(), FinalizerName))
+	return c.Client.Patch(ctx, cur, client.MergeFrom(base))
+}
+
+// uninstallFinalizer removes the operator finalizer from the CHK CR, allowing k8s to delete it.
+func (c *Controller) uninstallFinalizer(ctx context.Context, chk *apiChk.ClickHouseKeeperInstallation) error {
+	cur := &apiChk.ClickHouseKeeperInstallation{}
+	if err := c.Client.Get(ctx, kubeTypes.NamespacedName{Namespace: chk.Namespace, Name: chk.Name}, cur); err != nil {
+		return err
+	}
+	base := cur.DeepCopy()
+	cur.SetFinalizers(util.RemoveFromArray(FinalizerName, cur.GetFinalizers()))
+	return c.Client.Patch(ctx, cur, client.MergeFrom(base))
 }
 
 func (c *Controller) poll(ctx context.Context, cr api.ICustomResource, f func(c *apiChk.ClickHouseKeeperInstallation, e error) bool) {
