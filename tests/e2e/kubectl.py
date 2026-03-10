@@ -585,7 +585,7 @@ def get_pod_image(chi_name, pod_name="", ns=None, shell=None):
 
 
 def get_pod_names(chi_name, ns=None, shell=None):
-    return get_obj_names(chi_name, "pods", ns, shell)
+    return get_obj_names(chi_name, "pods", kind="chi", ns=ns, shell=shell)
 
 
 def get_obj_names(chi_name, obj_type="pods", kind = "chi", ns=None, shell=None):
