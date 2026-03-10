@@ -192,19 +192,20 @@ func (w *worker) shouldForceRestartHost(ctx context.Context, host *api.Host) boo
 	}
 }
 
-// ensureFinalizer
+// ensureFinalizer installs the operator finalizer on the CR if not already present.
+// Returns true if the finalizer was just installed (triggering a re-reconcile).
 func (w *worker) ensureFinalizer(ctx context.Context, chi *api.ClickHouseInstallation) bool {
 	if util.IsContextDone(ctx) {
 		log.V(1).Info("Reconcile is aborted. CR ensure fin: %s ", chi.GetName())
 		return false
 	}
 
-	// In case CHI is being deleted already, no need to meddle with finalizers
+	// Don't add finalizer if deletion is already in progress
 	if !chi.GetDeletionTimestamp().IsZero() {
 		return false
 	}
 
-	// Finalizer can already be listed in CHI, do nothing in this case
+	// Finalizer can already be listed, do nothing in this case
 	if util.InArray(FinalizerName, chi.GetFinalizers()) {
 		w.a.V(2).M(chi).F().Info("finalizer already installed")
 		return false
