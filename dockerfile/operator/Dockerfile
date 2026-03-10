@@ -47,8 +47,8 @@ RUN CGO_ENABLED=0 GO111MODULE=on GOOS="${TARGETOS}" GOARCH="${TARGETARCH}" \
 # ======================
 # ===== Image Base =====
 # ======================
-FROM gcr.io/distroless/static-debian11:latest       AS image-base-amd64
-FROM gcr.io/distroless/static-debian11:latest-arm64 AS image-base-arm64
+FROM gcr.io/distroless/static-debian13:latest       AS image-base-amd64
+FROM gcr.io/distroless/static-debian13:latest-arm64 AS image-base-arm64
 ARG TARGETARCH
 FROM image-base-${TARGETARCH}                       AS image-base
 ARG VERSION
