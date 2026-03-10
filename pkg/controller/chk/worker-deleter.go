@@ -16,6 +16,8 @@ package chk
 
 import (
 	"context"
+	apiChk "github.com/altinity/clickhouse-operator/pkg/apis/clickhouse-keeper.altinity.com/v1"
+	"github.com/altinity/clickhouse-operator/pkg/controller"
 	"time"
 
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -210,5 +212,84 @@ func shouldPurgeSecret(cr api.ICustomResource, reconcileFailedObjs *model.Regist
 }
 
 func shouldPurgePDB(cr api.ICustomResource, reconcileFailedObjs *model.Registry, m meta.Object) bool {
+	return true
+}
+
+// deleteCRProtocol purges all child resources owned by the CR.
+func (w *worker) deleteCRProtocol(ctx context.Context, chk *apiChk.ClickHouseKeeperInstallation) error {
+	if util.IsContextDone(ctx) {
+		log.V(1).Info("Delete CR protocol is aborted")
+		return nil
+	}
+
+	// Normalize to obtain proper default settings (cleanup policy etc.)
+	normalized := w.createTemplated(chk)
+	w.newTask(normalized, nil)
+
+	// Delete the CR-level service explicitly (may not appear in discovery)
+	_ = w.c.deleteServiceCR(ctx, chk)
+
+	// Discover all existing owned objects and purge them.
+	// Passing an empty reconcileFailedObjs registry means every discovered object is
+	// treated as "unknown" and purged according to the UnknownObjects cleanup policy.
+	// purgePVC additionally gates deletion on the reclaimPolicy label (Retain/Delete).
+	objs := w.c.discovery(ctx, chk)
+	w.purge(ctx, normalized, objs, model.NewRegistry())
+	return nil
+}
+
+// deleteCHK handles deletion of a CHK CR that has a non-zero DeletionTimestamp.
+// Returns true if the CHK is being deleted (caller should stop reconciling).
+func (w *worker) deleteCHK(ctx context.Context, chk *apiChk.ClickHouseKeeperInstallation) bool {
+	if util.IsContextDone(ctx) {
+		return false
+	}
+	if chk.GetDeletionTimestamp().IsZero() {
+		return false
+	}
+
+	// Check whether the CRD itself is being deleted.
+	// If the CRD is deleted, k8s cascades deletion to all CHKs — in this case we must
+	// NOT purge child resources (especially PVCs), because the user did not request it.
+	var purge bool
+	crd, err := w.c.ExtClient.ApiextensionsV1().CustomResourceDefinitions().Get(
+		ctx, "clickhousekeeperinstallations.clickhouse-keeper.altinity.com", controller.NewGetOptions())
+	if err == nil {
+		// CRD is in place
+		if crd.GetDeletionTimestamp().IsZero() {
+			// CRD is not being deleted. It is standard request to delete a CR only.
+			// Operator can delete all child resources.
+			w.a.V(1).M(chk).F().Info("CRD is not being deleted, operator will delete child resources")
+			purge = true
+		} else {
+			// CRD is being deleted.
+			// In most cases, users do not expect to delete all CRs with all their resources as along with CRD.
+			// Operator should not delete child resources - especially storage, such as PVCs and PVs
+			w.a.V(1).M(chk).F().Info("CRD BEING DELETED, operator will NOT delete child resources")
+			purge = false
+		}
+	} else {
+		// CRD not found — proceed with cleanup
+		w.a.V(1).M(chk).F().Error("unable to get CRD, got error: %v", err)
+		w.a.V(1).M(chk).F().Info("will delete CR with all resources: %s/%s", chk.Namespace, chk.Name)
+		purge = true
+	}
+
+	if purge {
+		if !util.InArray(FinalizerName, chk.GetFinalizers()) {
+			// No finalizer found, unexpected behavior
+			return false
+		}
+
+		_ = w.deleteCRProtocol(ctx, chk)
+	}
+
+	// We need to uninstall finalizer in order to allow k8s to delete CR resource
+	w.a.V(2).M(chk).F().Info("uninstall finalizer")
+	if err := w.c.uninstallFinalizer(ctx, chk); err != nil {
+		w.a.V(1).M(chk).F().Error("unable to uninstall finalizer. err: %v", err)
+	}
+
+	// CR delete completed
 	return true
 }
