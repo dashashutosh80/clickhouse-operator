@@ -314,7 +314,13 @@ def get_count(kind, name="", label="", chi="", chk ="", ns=None, shell=None):
 
     if kind == "pv":
         # pv is not namespaced so need to search namespace in claimRef
-        out = launch(f'get pv {label} -o yaml | grep "namespace: {ns}"', ok_to_fail=True, shell=shell)
+        if name:
+            out = launch(f"get pv {name} --no-headers", ok_to_fail=True, shell=shell)
+            if (out is None) or (len(out) == 0):
+                return 0
+            return len(out.splitlines())
+        else:
+            out = launch(f'get pv {label} -o yaml | grep "namespace: {ns}"', ok_to_fail=True, shell=shell)
     else:
         out = launch(
             f"get {kind} {name} -o=custom-columns=kind:kind,name:.metadata.name {label}",

@@ -37,24 +37,49 @@ MINIKUBE_PRELOAD_IMAGES="${MINIKUBE_PRELOAD_IMAGES:-""}"
 # =============================================================================
 
 PRELOAD_IMAGES_OPERATOR=(
+    # ClickHouse server versions used in manifests and templates
     "clickhouse/clickhouse-server:23.3"
     "clickhouse/clickhouse-server:23.8"
     "clickhouse/clickhouse-server:24.3"
     "clickhouse/clickhouse-server:24.8"
     "clickhouse/clickhouse-server:25.3"
+    "clickhouse/clickhouse-server:25.8"
     "clickhouse/clickhouse-server:latest"
-    "altinity/clickhouse-server:24.8.14.10459.altinitystable"
+    # Altinity builds (default stable template + FIPS)
+    "altinity/clickhouse-server:25.8.16.10001.altinitystable"
+    "altinity/clickhouse-server:24.3.5.48.altinityfips"
+    # ClickHouse Keeper versions used in operator tests
+    "clickhouse/clickhouse-keeper:25.3"
+    "clickhouse/clickhouse-keeper:25.8"
+    "clickhouse/clickhouse-keeper:24.3.5.46"
+    "docker.io/clickhouse/clickhouse-keeper:23.8.16"
+    # Zookeeper
     "docker.io/zookeeper:3.8.4"
+    # Misc
+    "registry.access.redhat.com/ubi8/ubi-minimal:latest"
+    "nginx:latest"
+    "altinity/clickhouse-backup:stable"
+    "altinity/clickhouse-backup:2.4.15"
 )
 
 PRELOAD_IMAGES_KEEPER=(
+    # ClickHouse server versions
     "clickhouse/clickhouse-server:23.3"
     "clickhouse/clickhouse-server:23.8"
     "clickhouse/clickhouse-server:24.3"
     "clickhouse/clickhouse-server:24.8"
     "clickhouse/clickhouse-server:25.3"
+    "clickhouse/clickhouse-server:25.8"
     "clickhouse/clickhouse-server:latest"
-    "altinity/clickhouse-server:24.8.14.10459.altinitystable"
+    # Altinity builds
+    "altinity/clickhouse-server:25.8.16.10001.altinitystable"
+    # ClickHouse Keeper versions
+    "clickhouse/clickhouse-keeper:25.3"
+    "clickhouse/clickhouse-keeper:25.8"
+    "clickhouse/clickhouse-keeper:24.3.5.46"
+    "docker.io/clickhouse/clickhouse-keeper:23.8.16"
+    "altinity/clickhouse-keeper:24.3.5.48.altinityfips"
+    # Zookeeper
     "docker.io/zookeeper:3.8.4"
 )
 
@@ -96,18 +121,31 @@ function common_minikube_reset() {
     fi
 }
 
-# Pull images and load them into minikube.
+# Pull images and load them into minikube in parallel.
 # Only runs if MINIKUBE_PRELOAD_IMAGES is set.
 # Usage: common_preload_images "${PRELOAD_IMAGES_OPERATOR[@]}"
 function common_preload_images() {
     if [[ -n "${MINIKUBE_PRELOAD_IMAGES}" ]]; then
-        echo "pre-load images into minikube"
+        echo "pre-load images into minikube (parallel)"
+        local pids=()
         for image in "$@"; do
-            docker pull -q "${image}" && \
-            echo "pushing ${image} to minikube" && \
-            minikube image load "${image}" --overwrite=false --daemon=true
+            (
+                docker pull -q "${image}" && \
+                echo "pushing ${image} to minikube" && \
+                minikube image load "${image}" --overwrite=false --daemon=true && \
+                echo "done: ${image}"
+            ) &
+            pids+=($!)
         done
-        echo "images pre-loaded"
+        local failed=0
+        for pid in "${pids[@]}"; do
+            wait "${pid}" || { echo "ERROR: a preload job failed (pid ${pid})"; failed=1; }
+        done
+        if [[ "${failed}" -eq 0 ]]; then
+            echo "images pre-loaded"
+        else
+            echo "WARNING: some images failed to preload"
+        fi
     fi
 }
 

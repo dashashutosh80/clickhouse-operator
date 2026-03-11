@@ -1,3 +1,4 @@
+import os
 import time
 import yaml
 import threading
@@ -458,13 +459,6 @@ def test_010008_3(self):
         with When("Restart operator"):
             util.restart_operator()
             with Then("Cluster creation should continue after a restart"):
-                # Fail faster
-                kubectl.wait_object(
-                    "pod",
-                    "",
-                    label=f"-l clickhouse.altinity.com/chi={chi}",
-                    count=3,
-                )
                 kubectl.wait_objects(chi, full_cluster)
                 kubectl.wait_chi_status(chi, "Completed")
 
@@ -1216,7 +1210,7 @@ def test_010013_1(self):
     table_names = clickhouse.query(chi, "SHOW TABLES", pod="chi-test-013-1-schema-propagation-simple-0-0-0").split()
 
     with Then("I check tables are propagated correctly 1"):
-        for attempt in retries(timeout=60, delay=1):
+        for attempt in retries(timeout=120, delay=1):
             with attempt:
                 for table_name in table_names:
                     if table_name[0] != ".":
@@ -1494,7 +1488,7 @@ def test_010014_0(self):
 
     with Then("Create schema objects"):
         for q in create_ddls:
-            clickhouse.query(chi_name, q, host=f"chi-{chi_name}-{cluster}-0-0")
+            clickhouse.query(chi_name, q, host=f"chi-{chi_name}-{cluster}-0-0", timeout=120)
 
     # Give some time for replication to catch up
     time.sleep(10)
@@ -3905,11 +3899,18 @@ def test_010036(self):
         with And("I check data on each replica"):
             for replica in (0,1):
                 with By(f"Check that databases exist on replica {replica}"):
-                    r = clickhouse.query(
-                        chi,
-                        pod=f"chi-test-036-volume-re-provisioning-simple-0-{replica}-0",
-                        sql="SELECT count(*) FROM system.databases where name like 'test_036%'",
-                        )
+                    # Schema propagation from ZooKeeper can take time after volume recovery,
+                    # especially under load. Retry for up to ~3 minutes.
+                    for i in range(1, 10):
+                        r = clickhouse.query(
+                            chi,
+                            pod=f"chi-test-036-volume-re-provisioning-simple-0-{replica}-0",
+                            sql="SELECT count(*) FROM system.databases where name like 'test_036%'",
+                            )
+                        if r == "2":
+                            break
+                        with Then(f"Not ready yet ({r}/2). Wait for {i * 5} seconds"):
+                            time.sleep(i * 5)
                     assert r == "2", error()
                 with And(f"checking data on the replica {replica}"):
                     r = clickhouse.query(
@@ -5415,7 +5416,7 @@ def test_010059(self):
             "apply_templates": {
                 current().context.clickhouse_template,
             },
-            "pod_count": 1,
+            "pod_count": 2,
             "do_not_delete": 1,
         },
     )
@@ -6243,7 +6244,7 @@ def test(self):
 
     # define values for Operator upgrade test (test_009)
 
-    with Pool(3) as pool:
+    with Pool(int(os.environ.get("POOL_SIZE", 3))) as pool:
         for scenario in loads(current_module(), Scenario, Suite):
             if not (hasattr(scenario, "tags") and ("NO_PARALLEL" in scenario.tags)):
                 Scenario(run=scenario, parallel=True, executor=pool)

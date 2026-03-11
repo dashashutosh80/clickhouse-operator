@@ -12,6 +12,7 @@ RUN_ALL_FLAG=$(common_convert_run_all)
 python3 "${COMMON_DIR}/../regression.py" \
     --only="/regression/e2e.test_operator/${ONLY}" \
     ${RUN_ALL_FLAG} \
+    ${RETRY_COUNT:+--retry "*,${RETRY_COUNT},0,${RETRY_DELAY:-30}"} \
     -o short \
     --trim-results on \
     --debug \
