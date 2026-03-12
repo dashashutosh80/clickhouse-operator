@@ -7,13 +7,13 @@ POOL_SIZE="${POOL_SIZE:-"12"}"
 # Skip image preloading when running a specific test (ONLY=...) to save time.
 # When running the full suite, preload all images upfront to avoid per-test pull delays.
 # Can be overridden explicitly: MINIKUBE_PRELOAD_IMAGES=yes ONLY=... to force preload.
-if [[ -n "${ONLY}" ]]; then
+if [[ -n "${ONLY}" && "${ONLY}" != "*" ]]; then
     MINIKUBE_PRELOAD_IMAGES="${MINIKUBE_PRELOAD_IMAGES:-""}"
     # Skip retries when running a specific test — retries mask real bugs during debugging.
     RETRY_COUNT="${RETRY_COUNT:-""}"
 else
     MINIKUBE_PRELOAD_IMAGES="${MINIKUBE_PRELOAD_IMAGES:-"yes"}"
-    # For full suite runs, retry 3 times to handle transient resource pressure failures.
+    # For full suite runs, retry 5 times to handle transient resource pressure failures.
     RETRY_COUNT="${RETRY_COUNT:-"5"}"
 fi
 export POOL_SIZE

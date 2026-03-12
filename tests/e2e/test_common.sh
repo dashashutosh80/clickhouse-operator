@@ -28,9 +28,7 @@ RUN_ALL="${RUN_ALL:-""}"
 KUBECTL_MODE="${KUBECTL_MODE:-"apply"}"
 NO_CLEANUP="${NO_CLEANUP:-""}"
 
-# Minikube control
-MINIKUBE_RESET="${MINIKUBE_RESET:-""}"
-MINIKUBE_PRELOAD_IMAGES="${MINIKUBE_PRELOAD_IMAGES:-""}"
+# Minikube control — defaults set by callers (run_tests_*_local.sh), not here
 
 # =============================================================================
 # Image lists for preloading into minikube

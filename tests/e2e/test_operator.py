@@ -5750,7 +5750,6 @@ def test_020002(self):
 
 @TestScenario
 @Name("test_020003. Clickhouse-keeper upgrade")
-@Tags("NO_PARALLEL")
 def test_020003(self):
     """Check that clickhouse-operator support upgrading clickhouse-keeper version
      when clickhouse-keeper defined with ClickHouseKeeperInstallation."""
@@ -5837,7 +5836,6 @@ def test_020003(self):
 
 @TestScenario
 @Name("test_020004. Test CHK upgrade from 0.23.x operator version")
-@Tags("NO_PARALLEL")
 def test_020004(self):
     with Then("Skip it. test_051_1 does a better job"):
         return
@@ -6025,7 +6023,6 @@ def test_020004_1(self):
 
 @TestScenario
 @Name("test_020005. Clickhouse-keeper scale-up/scale-down")
-@Tags("NO_PARALLEL")
 def test_020005(self):
     """Check that clickhouse-operator support scale-up/scale-down without service interruption"""
 
