@@ -15,8 +15,6 @@
 package creator
 
 import (
-	"fmt"
-
 	core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -34,7 +32,7 @@ func NewProbeManager() *ProbeManager {
 func (m *ProbeManager) CreateProbe(what interfaces.ProbeType, host *api.Host) *core.Probe {
 	switch what {
 	case interfaces.ProbeDefaultStartup:
-		return m.createDefaultLivenessProbe(host)
+		return m.createDefaultStartupProbe(host)
 	case interfaces.ProbeDefaultLiveness:
 		return m.createDefaultLivenessProbe(host)
 	case interfaces.ProbeDefaultReadiness:
@@ -43,16 +41,32 @@ func (m *ProbeManager) CreateProbe(what interfaces.ProbeType, host *api.Host) *c
 	panic("unknown probe type")
 }
 
-// createDefaultLivenessProbe returns default liveness probe
-func (m *ProbeManager) createDefaultLivenessProbe(host *api.Host) *core.Probe {
+// createDefaultStartupProbe returns default startup probe.
+// Uses pgrep to check that the clickhouse-keeper process is running.
+// This is intentionally quorum-independent: the probe succeeds as soon as the
+// process starts, allowing the operator to proceed to the next host without
+// waiting for Raft quorum. FailureThreshold is generous to handle slow starts.
+func (m *ProbeManager) createDefaultStartupProbe(_ *api.Host) *core.Probe {
 	return &core.Probe{
 		ProbeHandler: core.ProbeHandler{
 			Exec: &core.ExecAction{
-				Command: []string{
-					"bash",
-					"-xc",
-					livenessProbeScript(host.ZKPort.IntValue()),
-				},
+				Command: []string{"pgrep", "clickhouse-keeper"},
+			},
+		},
+		InitialDelaySeconds: 1,
+		PeriodSeconds:       3,
+		FailureThreshold:    60,
+	}
+}
+
+// createDefaultLivenessProbe returns default liveness probe.
+// Uses pgrep to detect a crashed or hung clickhouse-keeper process.
+// Readiness (Raft quorum) is covered by the separate readiness probe.
+func (m *ProbeManager) createDefaultLivenessProbe(_ *api.Host) *core.Probe {
+	return &core.Probe{
+		ProbeHandler: core.ProbeHandler{
+			Exec: &core.ExecAction{
+				Command: []string{"pgrep", "clickhouse-keeper"},
 			},
 		},
 		InitialDelaySeconds: 5,
@@ -61,17 +75,9 @@ func (m *ProbeManager) createDefaultLivenessProbe(host *api.Host) *core.Probe {
 	}
 }
 
-func livenessProbeScript(port int) string {
-	return fmt.Sprintf(
-		`date && `+
-			`OK=$(exec 3<>/dev/tcp/127.0.0.1/%d; printf 'ruok' >&3; IFS=; tee <&3; exec 3<&-;);`+
-			`if [[ "${OK}" == "imok" ]]; then exit 0; else exit 1; fi`,
-		port,
-	)
-}
-
-// createDefaultReadinessProbe returns default readiness probe
-func (m *ProbeManager) createDefaultReadinessProbe(host *api.Host) *core.Probe {
+// createDefaultReadinessProbe returns default readiness probe.
+// Checks the /ready HTTP endpoint which reflects Raft quorum status.
+func (m *ProbeManager) createDefaultReadinessProbe(_ *api.Host) *core.Probe {
 	return &core.Probe{
 		ProbeHandler: core.ProbeHandler{
 			HTTPGet: &core.HTTPGetAction{

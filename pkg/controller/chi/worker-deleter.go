@@ -257,10 +257,10 @@ func (w *worker) discoveryAndDeleteCR(ctx context.Context, cr api.ICustomResourc
 	return nil
 }
 
-// deleteCHIProtocol deletes all kubernetes resources related to chi *chop.ClickHouseInstallation
-func (w *worker) deleteCHIProtocol(ctx context.Context, chi *api.ClickHouseInstallation) error {
+// deleteCRProtocol purges all child resources owned by the CR.
+func (w *worker) deleteCRProtocol(ctx context.Context, chi *api.ClickHouseInstallation) error {
 	if util.IsContextDone(ctx) {
-		log.V(1).Info("Delete CHI protocol is aborted")
+		log.V(1).Info("Delete CR protocol is aborted")
 		return nil
 	}
 
@@ -680,21 +680,21 @@ func (w *worker) deleteCHI(ctx context.Context, old, new *api.ClickHouseInstalla
 	if err == nil {
 		// CRD is in place
 		if crd.GetObjectMeta().GetDeletionTimestamp().IsZero() {
-			// CRD is not being deleted. It is standard request to delete a CHI.
+			// CRD is not being deleted. It is standard request to delete a CR only.
 			// Operator can delete all child resources.
 			w.a.V(1).M(new).F().Info("CRD: %s/%s is not being deleted, operator will delete child resources", crd.Namespace, crd.Name)
 			purge = true
 		} else {
 			// CRD is being deleted.
-			// In most cases, users do not expect to delete all CHIs with all their resources as along with CRD.
+			// In most cases, users do not expect to delete all CRs with all their resources as along with CRD.
 			// Operator should not delete child resources - especially storage, such as PVCs and PVs
 			w.a.V(1).M(new).F().Info("CRD: %s/%s BEING DELETED, operator will NOT delete child resources", crd.Namespace, crd.Name)
 			purge = false
 		}
 	} else {
-		// No CRD is available
+		// CRD not found — proceed with cleanup
 		w.a.V(1).M(new).F().Error("unable to get CRD, got error: %v ", err)
-		w.a.V(1).M(new).F().Info("will delete chi with all resources: %s/%s", new.Namespace, new.Name)
+		w.a.V(1).M(new).F().Info("will delete CR with all resources: %s/%s", new.Namespace, new.Name)
 		purge = true
 	}
 
@@ -712,18 +712,18 @@ func (w *worker) deleteCHI(ctx context.Context, old, new *api.ClickHouseInstalla
 			return false
 		}
 
-		_ = w.deleteCHIProtocol(ctx, new)
+		_ = w.deleteCRProtocol(ctx, new)
 	} else {
 		new.GetRuntime().GetAttributes().SetSkipOwnerRef(true)
 		_ = w.reconcileCR(ctx, old, new)
 	}
 
-	// We need to uninstall finalizer in order to allow k8s to delete CHI resource
+	// We need to uninstall finalizer in order to allow k8s to delete CR resource
 	w.a.V(2).M(new).F().Info("uninstall finalizer")
 	if err := w.c.uninstallFinalizer(ctx, new); err != nil {
 		w.a.V(1).M(new).F().Error("unable to uninstall finalizer. err: %v", err)
 	}
 
-	// CHI delete completed
+	// CR delete completed
 	return true
 }

@@ -8,7 +8,7 @@ NODES="${NODES:-"1"}"
 CPUS="${CPUS:-"max"}"
 # Amount of RAM to allocate to Kubernetes (format: <number>[<unit>], where unit = b, k, m or g).
 # Use "max" to use the maximum amount of memory.
-MEMORY="${MEMORY:-"10g"}"
+MEMORY="${MEMORY:-"20g"}"
 # The Kubernetes version that the minikube will use
 # Ex: v1.2.3, 'stable' for v1.23.3, 'latest' for v1.23.4-rc.0)
 KUBERNETES_VERSION="${KUBERNETES_VERSION:-"stable"}"
@@ -78,6 +78,9 @@ echo "-----------------------"
 
 minikube start --kubernetes-version="${KUBERNETES_VERSION}" --nodes="${NODES}" --cpus="${CPUS}" --memory="${MEMORY}"
 #minikube start --kubernetes-version="${KUBERNETES_VERSION}" --nodes="${NODES}" --cpus="${CPUS}" --memory="${MEMORY}" --cache-images=false
+
+echo "Enabling metrics-server addon"
+minikube addons enable metrics-server
 
 if [[ -z "${SKIP_K9S}" ]]; then
     echo "Launching k9s"

@@ -198,7 +198,7 @@ def test_ch_002(self):
 @TestFeature
 @Name("e2e.test_clickhouse")
 def test(self):
-    util.clean_namespace(delete_chi=False)
+    util.clean_namespace(delete_chi=False, namespace=settings.test_namespace)
     all_tests = [
         test_ch_001,
         test_ch_002,

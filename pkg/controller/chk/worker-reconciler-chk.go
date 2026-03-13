@@ -755,13 +755,17 @@ func (w *worker) reconcileHostMain(ctx context.Context, host *api.Host) error {
 }
 
 func (w *worker) prepareStsReconcileOptsWaitSection(host *api.Host, opts *statefulset.ReconcileOptions) *statefulset.ReconcileOptions {
-	if host.GetCluster().GetReconcile().Host.Wait.Probes.GetStartup().IsTrue() {
+	probes := host.GetCluster().GetReconcile().Host.Wait.Probes
+	// Startup is required for newly starting node
+	if probes.GetStartup().IsTrue() || !host.HasAncestor() {
 		opts = opts.SetWaitUntilStarted()
 		w.a.V(1).
 			M(host).F().
-			Warning("Setting option SetWaitUntilStarted ")
+			Warning("Setting option SetWaitUntilStarted")
 	}
-	if host.GetCluster().GetReconcile().Host.Wait.Probes.GetReadiness().IsTrue() {
+	// Readiness requires Raft quorum. New hosts (no ancestor) cannot satisfy
+	// readiness until all siblings start and form quorum — skip to avoid deadlock.
+	if probes.GetReadiness().IsTrue() && host.HasAncestor() {
 		opts = opts.SetWaitUntilReady()
 		w.a.V(1).
 			M(host).F().

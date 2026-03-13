@@ -472,9 +472,7 @@ func (n *Normalizer) normalizeReconcileStatefulSet(sts chi.ReconcileStatefulSet)
 }
 
 func (n *Normalizer) normalizeReconcileHost(rh chi.ReconcileHost) chi.ReconcileHost {
-	// Normalize
-	rh = rh.Normalize(types.NewStringBool(true), false)
-	return rh
+	return rh.Normalize()
 }
 
 func (n *Normalizer) normalizeReconcileCleanup(cleanup *chi.Cleanup) *chi.Cleanup {

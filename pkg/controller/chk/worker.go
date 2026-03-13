@@ -44,6 +44,9 @@ import (
 	"github.com/altinity/clickhouse-operator/pkg/util"
 )
 
+// FinalizerName specifies name of the finalizer to be used with CHK
+const FinalizerName = "finalizer.clickhousekeeperinstallation.altinity.com"
+
 // worker represents worker thread which runs reconcile tasks
 type worker struct {
 	c *Controller
@@ -164,6 +167,35 @@ func (w *worker) shouldForceRestartHost(ctx context.Context, host *api.Host) boo
 		w.a.V(1).M(host).F().Info("Host force restart is not required. Host: %s", host.GetName())
 		return false
 	}
+}
+
+// ensureFinalizer installs the operator finalizer on the CR if not already present.
+// Returns true if the finalizer was just installed (triggering a re-reconcile).
+func (w *worker) ensureFinalizer(ctx context.Context, chk *apiChk.ClickHouseKeeperInstallation) bool {
+	if util.IsContextDone(ctx) {
+		return false
+	}
+
+	// Don't add finalizer if deletion is already in progress
+	if !chk.GetDeletionTimestamp().IsZero() {
+		return false
+	}
+
+	// Finalizer can already be listed, do nothing in this case
+	if util.InArray(FinalizerName, chk.GetFinalizers()) {
+		w.a.V(2).M(chk).F().Info("finalizer already installed")
+		return false
+	}
+
+	// No finalizer found - need to install it
+
+	if err := w.c.installFinalizer(ctx, chk); err != nil {
+		w.a.V(1).M(chk).F().Error("unable to install finalizer. err: %v", err)
+		return false
+	}
+
+	w.a.V(3).M(chk).F().Info("finalizer installed")
+	return true
 }
 
 func (w *worker) finalizeCR(

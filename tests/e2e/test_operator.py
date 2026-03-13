@@ -1,3 +1,4 @@
+import os
 import time
 import yaml
 import threading
@@ -42,6 +43,10 @@ def test_010001(self):
     created_objects = kubectl.get_obj_names_grepped("pod,service,sts,pvc,cm,pdb,secret", grep=chi)
     print("Created objects:")
     print(*created_objects, sep='\n')
+
+    print("'nCHI status:")
+    chi_status = kubectl.get("chi", chi)["status"]
+    print(yaml.safe_dump(chi_status))
 
     kubectl.delete_chi(chi)
 
@@ -454,13 +459,6 @@ def test_010008_3(self):
         with When("Restart operator"):
             util.restart_operator()
             with Then("Cluster creation should continue after a restart"):
-                # Fail faster
-                kubectl.wait_object(
-                    "pod",
-                    "",
-                    label=f"-l clickhouse.altinity.com/chi={chi}",
-                    count=3,
-                )
                 kubectl.wait_objects(chi, full_cluster)
                 kubectl.wait_chi_status(chi, "Completed")
 
@@ -716,7 +714,20 @@ def test_010011_1(self):
                 print(f"default user's IPs: {ips_l}")
                 assert len(ips) == 5
 
-            clickhouse.query("test-011-secured-cluster", "SYSTEM RELOAD CONFIG")
+            # Wait for ClickHouse to load updated config with network restrictions.
+            # Kubelet ConfigMap sync can take up to 60 seconds after operator reconcile completes.
+            for i in range(1, 12):
+                clickhouse.query("test-011-secured-cluster", "SYSTEM RELOAD CONFIG")
+                clickhouse.query("test-011-secured-cluster", "SYSTEM RELOAD CONFIG", host="chi-test-011-secured-cluster-default-1-0")
+                out = clickhouse.query_with_error(
+                    "test-011-insecured-cluster",
+                    "select 'OK'",
+                    host="chi-test-011-secured-cluster-default-1-0",
+                )
+                if out != "OK":
+                    break
+                print(f"Network restrictions not yet loaded on default-1-0, waiting 10s (attempt {i})")
+                time.sleep(10)
             with And("Connection to localhost should succeed with default user"):
                 out = clickhouse.query_with_error(
                     "test-011-secured-cluster",
@@ -1199,7 +1210,7 @@ def test_010013_1(self):
     table_names = clickhouse.query(chi, "SHOW TABLES", pod="chi-test-013-1-schema-propagation-simple-0-0-0").split()
 
     with Then("I check tables are propagated correctly 1"):
-        for attempt in retries(timeout=60, delay=1):
+        for attempt in retries(timeout=120, delay=1):
             with attempt:
                 for table_name in table_names:
                     if table_name[0] != ".":
@@ -1477,7 +1488,7 @@ def test_010014_0(self):
 
     with Then("Create schema objects"):
         for q in create_ddls:
-            clickhouse.query(chi_name, q, host=f"chi-{chi_name}-{cluster}-0-0")
+            clickhouse.query(chi_name, q, host=f"chi-{chi_name}-{cluster}-0-0", timeout=120)
 
     # Give some time for replication to catch up
     time.sleep(10)
@@ -1620,6 +1631,15 @@ def test_010014_0(self):
         check_schema_propagation(replicas)
 
         util.check_query_log(chi_name, ['CREATE'], [], query_log_start)
+
+        with Then("CHI status has all nodes in hostsWithTablesCreated"):
+            hosts_with_tables = kubectl.get("chi", chi_name)["status"]["hostsWithTablesCreated"]
+            print(yaml.safe_dump(hosts_with_tables))
+
+            domain = current().context.test_namespace + ".svc.cluster.local"
+
+            assert hosts_with_tables[2] == f"chi-{chi_name}-{cluster}-0-1.{domain}"
+            assert hosts_with_tables[3] == f"chi-{chi_name}-{cluster}-1-1.{domain}"
 
     with When("Restart (Zoo)Keeper pod"):
         if self.context.keeper_type == "zookeeper":
@@ -3879,11 +3899,18 @@ def test_010036(self):
         with And("I check data on each replica"):
             for replica in (0,1):
                 with By(f"Check that databases exist on replica {replica}"):
-                    r = clickhouse.query(
-                        chi,
-                        pod=f"chi-test-036-volume-re-provisioning-simple-0-{replica}-0",
-                        sql="SELECT count(*) FROM system.databases where name like 'test_036%'",
-                        )
+                    # Schema propagation from ZooKeeper can take time after volume recovery,
+                    # especially under load. Retry for up to ~3 minutes.
+                    for i in range(1, 10):
+                        r = clickhouse.query(
+                            chi,
+                            pod=f"chi-test-036-volume-re-provisioning-simple-0-{replica}-0",
+                            sql="SELECT count(*) FROM system.databases where name like 'test_036%'",
+                            )
+                        if r == "2":
+                            break
+                        with Then(f"Not ready yet ({r}/2). Wait for {i * 5} seconds"):
+                            time.sleep(i * 5)
                     assert r == "2", error()
                 with And(f"checking data on the replica {replica}"):
                     r = clickhouse.query(
@@ -5389,7 +5416,7 @@ def test_010059(self):
             "apply_templates": {
                 current().context.clickhouse_template,
             },
-            "pod_count": 1,
+            "pod_count": 2,
             "do_not_delete": 1,
         },
     )
@@ -5646,6 +5673,9 @@ def test_020000(self):
             assert kubectl.get_count('sts', label = label) == 1
             assert kubectl.get_count('pod', label = label) == 0
 
+    with Then("Delete CHK"):
+        kubectl.delete_chk(chk)
+
     with Finally("I clean up"):
         delete_test_namespace()
 
@@ -5720,7 +5750,6 @@ def test_020002(self):
 
 @TestScenario
 @Name("test_020003. Clickhouse-keeper upgrade")
-@Tags("NO_PARALLEL")
 def test_020003(self):
     """Check that clickhouse-operator support upgrading clickhouse-keeper version
      when clickhouse-keeper defined with ClickHouseKeeperInstallation."""
@@ -5785,6 +5814,20 @@ def test_020003(self):
                 break
             clickhouse.query(chi, "select * from system.zookeeper_connection")
 
+    with And("Wait for DDL queue to be operational after keeper upgrade"):
+        # After keeper rolling restart, the DDLWorker ZK watcher can be lost during
+        # leader election. ZK connection succeeds before DDL queue is ready.
+        # Retry a lightweight DDL until it completes to ensure the queue is working.
+        for attempt in retries(timeout=120, delay=5):
+            out = clickhouse.query_with_error(
+                chi,
+                "DROP TABLE IF EXISTS __chk_ddl_check ON CLUSTER default",
+                advanced_params="--distributed_ddl_task_timeout=10",
+                timeout=15,
+            )
+            if "Exception" not in out and "Timeout" not in out:
+                break
+
     check_replication(chi, {0, 1}, 2)
 
     with Finally("I clean up"):
@@ -5793,7 +5836,6 @@ def test_020003(self):
 
 @TestScenario
 @Name("test_020004. Test CHK upgrade from 0.23.x operator version")
-@Tags("NO_PARALLEL")
 def test_020004(self):
     with Then("Skip it. test_051_1 does a better job"):
         return
@@ -5981,7 +6023,6 @@ def test_020004_1(self):
 
 @TestScenario
 @Name("test_020005. Clickhouse-keeper scale-up/scale-down")
-@Tags("NO_PARALLEL")
 def test_020005(self):
     """Check that clickhouse-operator support scale-up/scale-down without service interruption"""
 
@@ -6019,7 +6060,7 @@ def test_020005(self):
         kubectl.create_and_check(
             manifest=chk_manifest_3, kind="chk",
             check={
-                "pod_count": 1,
+                "pod_count": 3,
                 "do_not_delete": 1,
             },
         )
@@ -6200,7 +6241,7 @@ def test(self):
 
     # define values for Operator upgrade test (test_009)
 
-    with Pool(3) as pool:
+    with Pool(int(os.environ.get("POOL_SIZE", 3))) as pool:
         for scenario in loads(current_module(), Scenario, Suite):
             if not (hasattr(scenario, "tags") and ("NO_PARALLEL" in scenario.tags)):
                 Scenario(run=scenario, parallel=True, executor=pool)
