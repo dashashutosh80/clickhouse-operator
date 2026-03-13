@@ -42,7 +42,7 @@ OPERATORHUB_DIR="${SRC_ROOT}/deploy/operatorhub"
 ##
 
 REPO_ROOTS=(
-#    "${CO_REPO_PATH:-${HOME}/dev/community-operators}"
+    "${CO_REPO_PATH:-${HOME}/dev/community-operators}"
     "${OCP_REPO_PATH:-${HOME}/dev/community-operators-prod}"
 )
 
