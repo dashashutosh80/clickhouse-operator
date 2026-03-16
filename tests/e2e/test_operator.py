@@ -207,6 +207,57 @@ def test_010006(self):
     with Finally("I clean up"):
         delete_test_namespace()
 
+@TestScenario
+@Name("test_010006_2. Test clickhouse version upgrade together with a setting change that is not compatible with a previous version")
+@Requirements(RQ_SRS_026_ClickHouseOperator_Managing_VersionUpgrades("1.0"))
+def test_010006_2(self):
+    create_shell_namespace_clickhouse_template()
+
+    old_version = "clickhouse/clickhouse-server:25.3"
+    new_version = "clickhouse/clickhouse-server:25.8"
+    chi = "test-006-2"
+
+    with Then(f"Start CHI with version {old_version}"):
+        kubectl.create_and_check(
+            manifest="manifests/chi/test-006-2-upgrade-1.yaml",
+            check={
+                "pod_count": 1,
+                "pod_image": old_version,
+                "do_not_delete": 1,
+            },
+        )
+
+    with When(f"Change upgrade ClickHouse to {new_version} with a setting change that only exists in a newer one"):
+        kubectl.create_and_check(
+            manifest="manifests/chi/test-006-2-upgrade-2.yaml",
+            check={
+                "pod_count": 1,
+                # "pod_image": new_version,
+                "chi_status": "InProgress",
+                "do_not_delete": 1,
+            },
+        )
+
+        with Then("Check if pod crashed during upgrade"):
+            pod_name = kubectl.get_pod_names(chi)[0]
+            for i in range(15):
+                container_status = kubectl.get_field("pod", pod_name, ".status.containerStatuses[0].state.waiting.reason",)
+                print(f"{pod_name} is {container_status}")
+                if container_status == "CrashLoopBackOff":
+                    print(kubectl.get_field("pod", pod_name, ".status.containerStatuses[0].state.waiting.message"))
+                    break
+                time.sleep(5)
+            assert container_status not in ["CrashLoopBackOff","Error"]
+
+        kubectl.wait_chi_status(chi, "Completed")
+
+        with And("Confirm the setting is set"):
+            out = clickhouse.query(chi, "select value from system.merge_tree_settings where name ='write_marks_for_substreams_in_compact_parts'")
+            assert out == "0"
+
+    with Finally("I clean up"):
+        delete_test_namespace()
+
 
 @TestScenario
 @Name("test_010007. Test template with custom clickhouse ports")
