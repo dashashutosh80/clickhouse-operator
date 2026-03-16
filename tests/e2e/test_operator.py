@@ -6259,8 +6259,8 @@ def test_020008(self):
 
 def cleanup_chis(self):
     with Given("Cleanup CHIs"):
-        ns = kubectl.get("ns", name="", ns="--all-namespaces")
-        if "items" in ns:
+        ns = kubectl.get("ns", name="", ns="--all-namespaces", ok_to_fail=True)
+        if ns and "items" in ns:
             for n in ns["items"]:
                 ns_name = n["metadata"]["name"]
                 if ns_name.startswith("test") and ns_name != self.context.test_namespace:
