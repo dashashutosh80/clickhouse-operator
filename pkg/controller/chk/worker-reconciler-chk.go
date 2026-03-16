@@ -389,12 +389,23 @@ func (w *worker) reconcileHostStatefulSet(ctx context.Context, host *api.Host, o
 	w.a.V(1).M(host).F().Info("Reconcile host STS: %s. App version: %s", host.GetName(), host.Runtime.Version.Render())
 
 	// Start with force-restart host
+	forcedRestart := false
 	if w.shouldForceRestartHost(ctx, host) {
 		w.a.V(1).M(host).F().Info("Reconcile host STS force restart: %s", host.GetName())
 		_ = w.hostForceRestart(ctx, host, opts)
+		forcedRestart = true
 	}
 
 	w.stsReconciler.PrepareHostStatefulSetWithStatus(ctx, host, host.IsStopped())
+
+	// After a force restart (scale-down to 0 replicas), the version label comparison may
+	// incorrectly report ObjectStatusSame if the shutdown and running STSes happen to produce
+	// matching fingerprints. In that case, override to ObjectStatusModified to ensure scale-up.
+	if forcedRestart && !host.IsStopped() && host.GetReconcileAttributes().GetStatus().Is(types.ObjectStatusSame) {
+		w.a.V(1).M(host).F().Info("Override ObjectStatusSame after force restart to ensure scale-up: %s", host.GetName())
+		host.GetReconcileAttributes().SetStatus(types.ObjectStatusModified)
+	}
+
 	opts = w.prepareStsReconcileOptsWaitSection(host, opts)
 
 	// We are in place, where we can  reconcile StatefulSet to desired configuration.
