@@ -463,7 +463,7 @@ def wait_container_status(pod, status, shell=None, ns=None):
     wait_field("pod", pod, ".status.containerStatuses[0].ready", status, ns, shell=shell)
 
 def get_container_status(pod, shell=None, ns=None):
-    return get_field("pod", pod, ".status.containerStatuses[0]", ns, shell=shell)
+    return get_field("pod", pod, ".status.containerStatuses[0].ready", ns, shell=shell)
 
 
 def wait_field(
