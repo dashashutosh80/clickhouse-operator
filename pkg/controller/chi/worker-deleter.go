@@ -16,6 +16,7 @@ package chi
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	core "k8s.io/api/core/v1"
@@ -311,9 +312,11 @@ func (w *worker) deleteCRProtocol(ctx context.Context, chi *api.ClickHouseInstal
 	})
 
 	// Delete all clusters
+	var wg sync.WaitGroup
 	chi.WalkClusters(func(cluster api.ICluster) error {
-		return w.deleteCluster(ctx, chi, cluster.(*api.Cluster))
+		return w.deleteCluster(ctx, chi, cluster.(*api.Cluster), &wg)
 	})
+	wg.Wait()
 
 	if util.IsContextDone(ctx) {
 		log.V(1).Info("Delete is aborted")
@@ -581,7 +584,7 @@ func (w *worker) deleteHost(ctx context.Context, chi *api.ClickHouseInstallation
 
 // deleteShard deletes all kubernetes resources related to shard *chop.ChiShard
 // chi is the new CHI in which there will be no more this shard
-func (w *worker) deleteShard(ctx context.Context, chi *api.ClickHouseInstallation, shard *api.ChiShard) error {
+func (w *worker) deleteShard(ctx context.Context, chi *api.ClickHouseInstallation, shard *api.ChiShard, wg *sync.WaitGroup) error {
 	if util.IsContextDone(ctx) {
 		log.V(1).Info("Delete shard is aborted. shard: %s ", shard.GetName())
 		return nil
@@ -599,9 +602,14 @@ func (w *worker) deleteShard(ctx context.Context, chi *api.ClickHouseInstallatio
 	// Delete Shard Service
 	_ = w.c.deleteServiceShard(ctx, shard)
 
-	// Delete all replicas
+	// Delete all replicas in parallel
 	shard.WalkHosts(func(host *api.Host) error {
-		return w.deleteHost(ctx, chi, host)
+		wg.Add(1)
+		go func(h *api.Host) {
+			defer wg.Done()
+			_ = w.deleteHost(ctx, chi, h)
+		}(host)
+		return nil
 	})
 
 	w.a.V(1).
@@ -615,7 +623,7 @@ func (w *worker) deleteShard(ctx context.Context, chi *api.ClickHouseInstallatio
 
 // deleteCluster deletes all kubernetes resources related to cluster *chop.ChiCluster
 // chi is the new CHI in which there will be no more this cluster
-func (w *worker) deleteCluster(ctx context.Context, chi *api.ClickHouseInstallation, cluster *api.Cluster) error {
+func (w *worker) deleteCluster(ctx context.Context, chi *api.ClickHouseInstallation, cluster *api.Cluster, wg *sync.WaitGroup) error {
 	if util.IsContextDone(ctx) {
 		log.V(2).Info("task is done")
 		return nil
@@ -641,7 +649,7 @@ func (w *worker) deleteCluster(ctx context.Context, chi *api.ClickHouseInstallat
 
 	// Delete all shards
 	cluster.WalkShards(func(index int, shard api.IShard) error {
-		return w.deleteShard(ctx, chi, shard.(*api.ChiShard))
+		return w.deleteShard(ctx, chi, shard.(*api.ChiShard), wg)
 	})
 
 	w.a.V(1).
