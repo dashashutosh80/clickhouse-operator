@@ -397,15 +397,17 @@ func (w *worker) reconcileHostStatefulSet(ctx context.Context, host *api.Host, o
 	}
 
 	w.stsReconciler.PrepareHostStatefulSetWithStatus(ctx, host, host.IsStopped())
-
-	// After a force restart (scale-down to 0 replicas), the version label comparison may
-	// incorrectly report ObjectStatusSame if the shutdown and running STSes happen to produce
-	// matching fingerprints. In that case, override to ObjectStatusModified to ensure scale-up.
+	// After a force restart the STS was scaled down to 0 replicas. PrepareHostStatefulSetWithStatus
+	// compares fingerprints of the desired STS (replicas=1) vs the current STS (replicas=0, set by
+	// hostScaleDown). In the current codebase these fingerprints differ, so ObjectStatusSame is not
+	// returned. However, this is a safety guard: if the fingerprints ever compare equal (e.g. due to
+	// a litter serialization quirk in a specific build), ObjectStatusSame would cause ReconcileStatefulSet
+	// to skip the update and leave the host at 0 replicas. Override to ObjectStatusModified to guarantee
+	// the scale-up always proceeds after a forced restart of a non-stopped host.
 	if forcedRestart && !host.IsStopped() && host.GetReconcileAttributes().GetStatus().Is(types.ObjectStatusSame) {
 		w.a.V(1).M(host).F().Info("Override ObjectStatusSame after force restart to ensure scale-up: %s", host.GetName())
 		host.GetReconcileAttributes().SetStatus(types.ObjectStatusModified)
 	}
-
 	opts = w.prepareStsReconcileOptsWaitSection(host, opts)
 
 	// We are in place, where we can  reconcile StatefulSet to desired configuration.
