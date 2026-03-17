@@ -60,6 +60,14 @@ func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
+	// Guard: skip namespaces outside the configured watch list.
+	// keeperPredicate() filters direct CHK events, but reconcile requests triggered by owned
+	// StatefulSet changes bypass it. This guard catches all paths including those.
+	if !chop.Config().IsNamespaceWatched(req.Namespace) {
+		log.V(2).Info("skip reconcile, namespace '%s' is not watched", req.Namespace)
+		return ctrl.Result{}, nil
+	}
+
 	// Fetch the ClickHouseKeeper instance
 	new := &apiChk.ClickHouseKeeperInstallation{}
 	if err := c.Client.Get(ctx, req.NamespacedName, new); err != nil {
