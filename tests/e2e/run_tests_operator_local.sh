@@ -3,7 +3,7 @@ CUR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 source "${CUR_DIR}/test_common.sh"
 
 IMAGE_PULL_POLICY="${IMAGE_PULL_POLICY:-"IfNotPresent"}"
-POOL_SIZE="${POOL_SIZE:-"12"}"
+POOL_SIZE="${POOL_SIZE:-"15"}"
 # Skip image preloading when running a specific test (ONLY=...) to save time.
 # When running the full suite, preload all images upfront to avoid per-test pull delays.
 # Can be overridden explicitly: MINIKUBE_PRELOAD_IMAGES=yes ONLY=... to force preload.
