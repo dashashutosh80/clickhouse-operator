@@ -18,12 +18,13 @@ import (
 	"fmt"
 	"net/http"
 
+	prom "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/exporters/prometheus"
 	otelApi "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/sdk/metric"
 	otelResource "go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
 	log "github.com/altinity/clickhouse-operator/pkg/announcer"
 	"github.com/altinity/clickhouse-operator/pkg/apis/deployment"
@@ -97,7 +98,15 @@ func Meter() otelApi.Meter {
 
 func serveMetrics(addr, path string) {
 	fmt.Printf("start serving metrics at: %s%s\n", addr, path)
-	http.Handle(path, promhttp.Handler())
+	// Use ContinueOnError so that a single untranslatable OTel metric (e.g. a metric
+	// with a name that cannot be mapped to a valid Prometheus name) does not cause an
+	// HTTP 500 for the entire scrape. As of otel/exporters/prometheus v0.61.0+ invalid
+	// metrics produce prometheus.NewInvalidMetric, which triggers HTTP 500 under the
+	// default HTTPErrorOnError. ContinueOnError logs the problem and keeps the scrape alive.
+	handler := promhttp.HandlerFor(prom.DefaultGatherer, promhttp.HandlerOpts{
+		ErrorHandling: promhttp.ContinueOnError,
+	})
+	http.Handle(path, handler)
 	err := http.ListenAndServe(addr, nil)
 	if err != nil {
 		fmt.Printf("error serving http: %v", err)
