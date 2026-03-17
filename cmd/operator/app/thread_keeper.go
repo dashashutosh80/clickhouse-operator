@@ -49,7 +49,11 @@ func initKeeper(ctx context.Context) error {
 	manager, err = ctrlRuntime.NewManager(ctrlRuntime.GetConfigOrDie(), ctrlRuntime.Options{
 		Scheme: scheme,
 		Cache: cache.Options{
-			Namespaces: []string{chop.Config().GetInformerNamespace()},
+			// GetCacheNamespaces returns exact namespace names when all configured watch namespaces are
+			// valid DNS labels, enabling per-namespace cache scoping. Falls back to NamespaceAll when
+			// any watch namespace is a regexp pattern (the controller's Reconcile guard handles filtering
+			// in that case).
+			Namespaces: chop.Config().GetCacheNamespaces(),
 		},
 	})
 	if err != nil {
