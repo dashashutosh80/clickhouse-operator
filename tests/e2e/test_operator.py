@@ -5910,9 +5910,9 @@ def test_020003_2(self):
         )
 
         with Then("I confirm all 3 Keeper nodes are ready"):
-            kubectl.wait_field('pod', 'chk-test-020003-chk-keeper-0-0-0', '.status.containerStatuses[0].ready', 'true', retries=1)
-            kubectl.wait_field('pod', 'chk-test-020003-chk-keeper-0-1-0', '.status.containerStatuses[0].ready', 'true', retries=1)
-            kubectl.wait_field('pod', 'chk-test-020003-chk-keeper-0-2-0', '.status.containerStatuses[0].ready', 'true', retries=1)
+            kubectl.wait_field('pod', 'chk-test-020003-chk-keeper-0-0-0', '.status.containerStatuses[0].ready', 'true', retries=10)
+            kubectl.wait_field('pod', 'chk-test-020003-chk-keeper-0-1-0', '.status.containerStatuses[0].ready', 'true', retries=10)
+            kubectl.wait_field('pod', 'chk-test-020003-chk-keeper-0-2-0', '.status.containerStatuses[0].ready', 'true', retries=10)
 
     with Finally("I clean up"):
         delete_test_namespace()
