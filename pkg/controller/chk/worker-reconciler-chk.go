@@ -453,7 +453,14 @@ func (w *worker) hostScaleDown(ctx context.Context, host *api.Host, opts *statef
 	w.a.V(1).M(host).F().Info("Reconcile host. Host shutdown via scale down: %s", host.GetName())
 
 	w.stsReconciler.PrepareHostStatefulSetWithStatus(ctx, host, true)
-	err := w.stsReconciler.ReconcileStatefulSet(ctx, host, false, opts)
+	// Use WaitUntilReady so the reconciler waits for Status.ReadyReplicas to reach 0
+	// (i.e., the pod fully terminates) before returning. Without this wait, the
+	// subsequent scale-up in reconcileHostStatefulSet sees Status.ReadyReplicas=1 for
+	// a Spec.Replicas=0 STS, making IsStatefulSetReady return false. That triggers the
+	// ErrCRUDRecreate path, which deletes the STS and then fails to recreate it with
+	// "already exists" (async deletion not yet complete), leaving the STS stuck at 0.
+	scaleDownOpts := statefulset.NewReconcileStatefulSetOptions().SetWaitUntilReady()
+	err := w.stsReconciler.ReconcileStatefulSet(ctx, host, false, scaleDownOpts)
 	if err != nil {
 		w.a.V(1).M(host).F().Info("Host shutdown abort 1. Host: %s err: %v", host.GetName(), err)
 		return err
