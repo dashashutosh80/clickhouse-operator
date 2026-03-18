@@ -38,6 +38,9 @@ import (
 // Controller reconciles a ClickHouseKeeper object
 type Controller struct {
 	client.Client
+	// APIReader is a non-cached client.Reader for direct API-server reads.
+	// It is used by the STS client to avoid stale-cache races in the forced-restart path.
+	APIReader client.Reader
 	Scheme    *apiMachinery.Scheme
 	ExtClient apiExtensions.Interface
 
@@ -49,7 +52,7 @@ type Controller struct {
 
 func (c *Controller) new() {
 	c.namer = managers.NewNameManager(managers.NameManagerTypeKeeper)
-	c.kube = kube.NewAdapter(c.Client, c.namer)
+	c.kube = kube.NewAdapter(c.Client, c.APIReader, c.namer)
 	//labeler:                 NewLabeler(kube),
 	//pvcDeleter :=              volume.NewPVCDeleter(managers.NewNameManager(managers.NameManagerTypeKeeper))
 }

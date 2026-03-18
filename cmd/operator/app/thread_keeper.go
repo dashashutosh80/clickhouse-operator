@@ -75,6 +75,7 @@ func initKeeper(ctx context.Context) error {
 		Complete(
 			&controller.Controller{
 				Client:    manager.GetClient(),
+				APIReader: manager.GetAPIReader(),
 				Scheme:    manager.GetScheme(),
 				ExtClient: extClient,
 			},
