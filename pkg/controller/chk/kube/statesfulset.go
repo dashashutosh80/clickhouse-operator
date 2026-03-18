@@ -33,12 +33,17 @@ import (
 
 type STS struct {
 	kubeClient client.Client
-	namer      interfaces.INameManager
+	// apiReader bypasses the controller-runtime cache for reads, giving up-to-date STS state.
+	// The cache is write-through but not synchronously invalidated, so a Get() immediately after
+	// an Update() can still return a stale object. Using a direct reader avoids that race.
+	apiReader client.Reader
+	namer     interfaces.INameManager
 }
 
-func NewSTS(kubeClient client.Client, namer interfaces.INameManager) *STS {
+func NewSTS(kubeClient client.Client, apiReader client.Reader, namer interfaces.INameManager) *STS {
 	return &STS{
 		kubeClient: kubeClient,
+		apiReader:  apiReader,
 		namer:      namer,
 	}
 }
@@ -71,7 +76,15 @@ func (c *STS) Get(ctx context.Context, params ...any) (*apps.StatefulSet, error)
 
 func (c *STS) get(ctx context.Context, namespace, name string) (*apps.StatefulSet, error) {
 	sts := &apps.StatefulSet{}
-	err := c.kubeClient.Get(ctx, types.NamespacedName{
+	// Use the direct (non-cached) reader so callers always see authoritative STS state from
+	// the API server. The controller-runtime cache is updated via watch events and can lag
+	// behind writes. Since the STS reconciler makes branching decisions based on live STS
+	// state (fingerprint comparison, IsStatefulSetReady, create-vs-update routing), a stale
+	// read could cause incorrect reconcile outcomes. Note: this does NOT help with
+	// Status.ReadyReplicas lag after a scale-down — that reflects real pod termination time
+	// on the API server itself, not a cache artifact. The WaitUntilReady wait in hostScaleDown
+	// is what handles that timing gap.
+	err := c.apiReader.Get(ctx, types.NamespacedName{
 		Namespace: namespace,
 		Name:      name,
 	}, sts)
