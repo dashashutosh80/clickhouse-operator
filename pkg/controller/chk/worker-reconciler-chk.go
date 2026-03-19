@@ -135,6 +135,8 @@ func (w *worker) reconcileCR(ctx context.Context, old, new *apiChk.ClickHouseKee
 func (w *worker) buildCR(ctx context.Context, _cr *apiChk.ClickHouseKeeperInstallation) *apiChk.ClickHouseKeeperInstallation {
 	cr := w.createTemplatedCR(_cr)
 	w.newTask(cr, cr.GetAncestorT())
+	// fillCurSTS must be called before findMinMaxVersions to ensure deterministic
+	w.fillCurSTS(ctx, cr)
 	w.findMinMaxVersions(ctx, cr)
 	common.LogOldAndNew("norm stage 1:", cr.GetAncestorT(), cr)
 
@@ -148,11 +150,12 @@ func (w *worker) buildCR(ctx context.Context, _cr *apiChk.ClickHouseKeeperInstal
 		opts.Templates = templates
 		cr = w.createTemplatedCR(_cr, opts)
 		w.newTask(cr, cr.GetAncestorT())
+		// fillCurSTS again because createTemplatedCR creates new host objects
+		w.fillCurSTS(ctx, cr)
 		w.findMinMaxVersions(ctx, cr)
 		common.LogOldAndNew("norm stage 2:", cr.GetAncestorT(), cr)
 	}
 
-	w.fillCurSTS(ctx, cr)
 	w.logSWVersion(ctx, cr)
 
 	actionPlan := api.MakeActionPlan(cr.GetAncestorT(), cr)
