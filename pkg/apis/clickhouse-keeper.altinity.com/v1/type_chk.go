@@ -305,6 +305,12 @@ func (cr *ClickHouseKeeperInstallation) HostsWithAttributesCount(a *types.Reconc
 	return count
 }
 
+// HasReconcileWork reports whether the CR has any work to reconcile:
+// either the ActionPlan has spec/label/finalizer changes, or child resources have drifted.
+func (cr *ClickHouseKeeperInstallation) HasReconcileWork() bool {
+	return cr.EnsureRuntime().ActionPlan.HasActionsToDo() || cr.GetHostsAttributesCounters().HasDrift()
+}
+
 // GetHostsAttributesCounters
 func (cr *ClickHouseKeeperInstallation) GetHostsAttributesCounters() *types.ReconcileAttributesCounters {
 	counters := types.NewReconcileAttributesCounters()
