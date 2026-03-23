@@ -69,9 +69,10 @@ rm "${RBAC_ROLE_RULES_FILE}"
 # Insert examples into CVV file
 EXAMPLES_FILE="qwe.yaml"
 F1="${SRC_ROOT}/docs/chi-examples/01-simple-layout-01-1shard-1repl.yaml"
-F2="${SRC_ROOT}/docs/chi-examples/50-CHIT-10-useTemplates-and-use-templates-with-selector.yaml"
+F2="${SRC_ROOT}/docs/chi-examples/50-CHIT-02-manual-template-with-selector.yaml"
 F3="${SRC_ROOT}/docs/chi-examples/70-chop-config.yaml"
-yq -n -I=2 -o=json ".[0] = load(\"${F1}\") | .[1] = load(\"${F2}\") | .[2] = load(\"${F3}\")" > "${EXAMPLES_FILE}"
+F4="${SRC_ROOT}/docs/chk-examples/01-simple-1.yaml"
+yq -n -I=2 -o=json ".[0] = load(\"${F1}\") | .[1] = load(\"${F2}\") | .[2] = load(\"${F3}\") | .[3] = load(\"${F4}\")" > "${EXAMPLES_FILE}"
 yq -i ".metadata.annotations.alm-examples = strload(\"${EXAMPLES_FILE}\")" "${CVV_FILE_TEMPLATE}"
 rm "${EXAMPLES_FILE}"
 
