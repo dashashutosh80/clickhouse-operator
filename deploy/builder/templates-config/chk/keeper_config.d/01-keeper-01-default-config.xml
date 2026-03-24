@@ -6,8 +6,6 @@
             <operation_timeout_ms>10000</operation_timeout_ms>
             <raft_logs_level>information</raft_logs_level>
             <session_timeout_ms>100000</session_timeout_ms>
-            <async_replication>1</async_replication>
-            <use_xid_64>1</use_xid_64>
         </coordination_settings>
         <hostname_checks_enabled>true</hostname_checks_enabled>
         <log_storage_path>/var/lib/clickhouse-keeper/coordination/logs</log_storage_path>
