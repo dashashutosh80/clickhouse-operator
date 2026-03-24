@@ -5832,6 +5832,7 @@ data:
     <!-- deploy/builder/templates-config -->
     <!-- IMPORTANT -->
     <clickhouse>
+        <asynchronous_metrics_keeper_metrics_only>1</asynchronous_metrics_keeper_metrics_only>
         <keeper_server>
             <coordination_settings>
                 <min_session_timeout_ms>10000</min_session_timeout_ms>
