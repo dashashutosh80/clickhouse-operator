@@ -41,7 +41,7 @@ type Adapter struct {
 	sts        *STS
 }
 
-func NewAdapter(kubeClient client.Client, namer interfaces.INameManager) *Adapter {
+func NewAdapter(kubeClient client.Client, apiReader client.Reader, namer interfaces.INameManager) *Adapter {
 	return &Adapter{
 		cr: NewCR(kubeClient),
 
@@ -54,7 +54,7 @@ func NewAdapter(kubeClient client.Client, namer interfaces.INameManager) *Adapte
 		replicaSet: NewReplicaSet(kubeClient),
 		secret:     NewSecret(kubeClient, namer),
 		service:    NewService(kubeClient, namer),
-		sts:        NewSTS(kubeClient, namer),
+		sts:        NewSTS(kubeClient, apiReader, namer),
 	}
 }
 

@@ -207,6 +207,57 @@ def test_010006(self):
     with Finally("I clean up"):
         delete_test_namespace()
 
+@TestScenario
+@Name("test_010006_2. Test clickhouse version upgrade together with a setting change that is not compatible with a previous version")
+@Requirements(RQ_SRS_026_ClickHouseOperator_Managing_VersionUpgrades("1.0"))
+def test_010006_2(self):
+    create_shell_namespace_clickhouse_template()
+
+    old_version = "clickhouse/clickhouse-server:25.3"
+    new_version = "clickhouse/clickhouse-server:25.8"
+    chi = "test-006-2"
+
+    with Then(f"Start CHI with version {old_version}"):
+        kubectl.create_and_check(
+            manifest="manifests/chi/test-006-2-upgrade-1.yaml",
+            check={
+                "pod_count": 1,
+                "pod_image": old_version,
+                "do_not_delete": 1,
+            },
+        )
+
+    with When(f"Change upgrade ClickHouse to {new_version} with a setting change that only exists in a newer one"):
+        kubectl.create_and_check(
+            manifest="manifests/chi/test-006-2-upgrade-2.yaml",
+            check={
+                "pod_count": 1,
+                # "pod_image": new_version,
+                "chi_status": "InProgress",
+                "do_not_delete": 1,
+            },
+        )
+
+        with Then("Check if pod crashed during upgrade"):
+            pod_name = kubectl.get_pod_names(chi)[0]
+            for i in range(15):
+                container_status = kubectl.get_field("pod", pod_name, ".status.containerStatuses[0].state.waiting.reason",)
+                print(f"{pod_name} is {container_status}")
+                if container_status == "CrashLoopBackOff":
+                    print(kubectl.get_field("pod", pod_name, ".status.containerStatuses[0].state.waiting.message"))
+                    break
+                time.sleep(5)
+            assert container_status not in ["CrashLoopBackOff","Error"]
+
+        kubectl.wait_chi_status(chi, "Completed")
+
+        with And("Confirm the setting is set"):
+            out = clickhouse.query(chi, "select value from system.merge_tree_settings where name ='write_marks_for_substreams_in_compact_parts'")
+            assert out == "0"
+
+    with Finally("I clean up"):
+        delete_test_namespace()
+
 
 @TestScenario
 @Name("test_010007. Test template with custom clickhouse ports")
@@ -5756,9 +5807,8 @@ def test_020003(self):
 
     create_shell_namespace_clickhouse_template()
 
-    chk_manifest = f"manifests/chk/test-020003-chk.yaml"
-    chk_manifest_upgraded = f"manifests/chk/test-020003-chk-2.yaml"
-    chi_manifest = f"manifests/chk/test-020003-chi-chk-upgrade.yaml"
+    chi_manifest = "manifests/chk/test-020003-chi-chk-upgrade.yaml"
+    chk_manifest = "manifests/chk/test-020003-chk.yaml"
     chi = yaml_manifest.get_name(util.get_full_path(chi_manifest))
     chk = yaml_manifest.get_name(util.get_full_path(chk_manifest))
 
@@ -5768,7 +5818,7 @@ def test_020003(self):
 
     with Given("CHK with 3 replicas"):
         kubectl.create_and_check(
-            manifest=chk_manifest,
+            manifest="manifests/chk/test-020003-chk.yaml",
             kind = "chk",
             check={
                 "pod_count": 3,
@@ -5788,13 +5838,13 @@ def test_020003(self):
 
     check_replication(chi, {0, 1}, 1)
 
-    with When(f"I check clickhouse-keeper version is {keeper_version_from}"):
+    with And(f"I check clickhouse-keeper version is {keeper_version_from}"):
         assert keeper_version_from in \
                kubectl.get_field('pod', 'chk-test-020003-chk-keeper-0-0-0', '.spec.containers[0].image'), error()
 
-    with Then(f"I change keeper version to {keeper_version_to}"):
+    with When(f"I change keeper version to {keeper_version_to}"):
         kubectl.create_and_check(
-            manifest=chk_manifest_upgraded,
+            manifest="manifests/chk/test-020003-chk-2.yaml",
             kind = "chk",
             check={
                 "pod_count": 3,
@@ -5802,12 +5852,12 @@ def test_020003(self):
             },
         )
 
-    with When(f"I check clickhouse-keeper version is changed to {keeper_version_to}"):
+    with Then(f"I check clickhouse-keeper version is changed to {keeper_version_to}"):
         kubectl.wait_field('pod', 'chk-test-020003-chk-keeper-0-0-0', '.spec.containers[0].image', f'clickhouse/clickhouse-keeper:{keeper_version_to}', retries=1)
         kubectl.wait_field('pod', 'chk-test-020003-chk-keeper-0-1-0', '.spec.containers[0].image', f'clickhouse/clickhouse-keeper:{keeper_version_to}', retries=1)
         kubectl.wait_field('pod', 'chk-test-020003-chk-keeper-0-2-0', '.spec.containers[0].image', f'clickhouse/clickhouse-keeper:{keeper_version_to}', retries=1)
 
-    with Then("Wait for ClickHouse to connect to Keeper properly"):
+    with And("Wait for ClickHouse to connect to Keeper properly"):
         for attempt in retries(timeout=180, delay=5):
             out = clickhouse.query_with_error(chi, "select * from system.zookeeper_connection")
             if not "KEEPER_EXCEPTION" in out:
@@ -5829,6 +5879,40 @@ def test_020003(self):
                 break
 
     check_replication(chi, {0, 1}, 2)
+
+    with Finally("I clean up"):
+        delete_test_namespace()
+
+@TestScenario
+@Name("test_020003_2. ClickhouseKeeper configuration")
+def test_020003_2(self):
+    create_shell_namespace_clickhouse_template()
+
+    with Given("CHK with 3 replicas"):
+        kubectl.create_and_check(
+            manifest="manifests/chk/test-020003-chk-2.yaml",
+            kind = "chk",
+            check={
+                "pod_count": 3,
+                "do_not_delete": 1,
+            },
+        )
+
+    with When("Change Keeper server setting"):
+        kubectl.create_and_check(
+            manifest="manifests/chk/test-020003-chk-3.yaml",
+            kind = "chk",
+            check={
+                # do not wait for pods, only for CHK status
+                # "pod_count": 3,
+                "do_not_delete": 1,
+            },
+        )
+
+        with Then("I confirm all 3 Keeper nodes are ready"):
+            kubectl.wait_field('pod', 'chk-test-020003-chk-keeper-0-0-0', '.status.containerStatuses[0].ready', 'true', retries=10)
+            kubectl.wait_field('pod', 'chk-test-020003-chk-keeper-0-1-0', '.status.containerStatuses[0].ready', 'true', retries=10)
+            kubectl.wait_field('pod', 'chk-test-020003-chk-keeper-0-2-0', '.status.containerStatuses[0].ready', 'true', retries=10)
 
     with Finally("I clean up"):
         delete_test_namespace()
@@ -6208,8 +6292,8 @@ def test_020008(self):
 
 def cleanup_chis(self):
     with Given("Cleanup CHIs"):
-        ns = kubectl.get("ns", name="", ns="--all-namespaces")
-        if "items" in ns:
+        ns = kubectl.get("ns", name="", ns="--all-namespaces", ok_to_fail=True)
+        if ns and "items" in ns:
             for n in ns["items"]:
                 ns_name = n["metadata"]["name"]
                 if ns_name.startswith("test") and ns_name != self.context.test_namespace:

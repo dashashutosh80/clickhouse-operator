@@ -87,12 +87,12 @@ func (w *worker) reconcileCR(ctx context.Context, old, new *api.ClickHouseInstal
 			metrics.CRReconcilesCompleted(ctx, new)
 		}
 		return nil
-	case new.EnsureRuntime().ActionPlan.HasActionsToDo():
-		w.a.M(new).F().Info("ActionPlan has actions - continue reconcile")
+	case new.HasReconcileWork():
+		w.a.M(new).F().Info("CR has reconcile work - continue reconcile")
 	case w.isAfterFinalizerInstalled(new.GetAncestorT(), new):
 		w.a.M(new).F().Info("isAfterFinalizerInstalled - continue reconcile-2")
 	default:
-		w.a.M(new).F().Info("ActionPlan has no actions - abort reconcile")
+		w.a.M(new).F().Info("No reconcile work - abort reconcile")
 		metrics.CRReconcilesCompleted(ctx, new)
 		return nil
 	}
@@ -137,6 +137,14 @@ func (w *worker) reconcileCR(ctx context.Context, old, new *api.ClickHouseInstal
 func (w *worker) buildCR(ctx context.Context, _cr *api.ClickHouseInstallation) *api.ClickHouseInstallation {
 	cr := w.createTemplatedCR(_cr)
 	w.newTask(cr, cr.GetAncestorT())
+	// fillCurSTS must be called before findMinMaxVersions to ensure deterministic
+	// StatefulSet fingerprint calculation. appendConfigLabels copies config version
+	// labels from CurStatefulSet into the desired STS labels, which are part of the
+	// fingerprint. Without CurStatefulSet populated, these labels are omitted, producing
+	// a different fingerprint than the one computed later during reconcileHostStatefulSet
+	// (where CurStatefulSet IS available). This hash mismatch can cause unnecessary STS
+	// updates that cascade into STS deletion via the recreate-on-update-failure path.
+	w.fillCurSTS(ctx, cr)
 	w.findMinMaxVersions(ctx, cr)
 	common.LogOldAndNew("norm stage 1:", cr.GetAncestorT(), cr)
 
@@ -150,11 +158,12 @@ func (w *worker) buildCR(ctx context.Context, _cr *api.ClickHouseInstallation) *
 		opts.Templates = templates
 		cr = w.createTemplatedCR(_cr, opts)
 		w.newTask(cr, cr.GetAncestorT())
+		// fillCurSTS again because createTemplatedCR creates new host objects
+		w.fillCurSTS(ctx, cr)
 		w.findMinMaxVersions(ctx, cr)
 		common.LogOldAndNew("norm stage 2:", cr.GetAncestorT(), cr)
 	}
 
-	w.fillCurSTS(ctx, cr)
 	w.logSWVersion(ctx, cr)
 
 	actionPlan := api.MakeActionPlan(cr.GetAncestorT(), cr)

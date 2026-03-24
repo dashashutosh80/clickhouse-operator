@@ -1412,6 +1412,28 @@ func (c *OperatorConfig) GetInformerNamespace() string {
 	return namespace
 }
 
+// GetCacheNamespaces returns namespace list suitable for controller-runtime cache.Options.Namespaces.
+// When all configured namespaces are valid DNS labels they are returned directly, allowing the cache
+// to scope its watches to those namespaces only. If any namespace is a regexp pattern (or none are
+// configured) the function falls back to []string{NamespaceAll} so the cache watches everything,
+// relying on the per-reconcile namespace guard in the controller.
+func (c *OperatorConfig) GetCacheNamespaces() []string {
+	if !c.Watch.Namespaces.Include.HasValue() {
+		return []string{meta.NamespaceAll}
+	}
+	var labelRegexp = regexp.MustCompile("^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+	namespaces := c.Watch.Namespaces.Include.Value()
+	result := make([]string, 0, len(namespaces))
+	for _, ns := range namespaces {
+		if !labelRegexp.MatchString(ns) {
+			// Contains a regexp pattern — can't enumerate exact namespaces, fall back to all
+			return []string{meta.NamespaceAll}
+		}
+		result = append(result, ns)
+	}
+	return result
+}
+
 // GetLogLevel gets logger level
 func (c *OperatorConfig) GetLogLevel() (log.Level, error) {
 	if i, err := strconv.Atoi(c.Logger.V); err == nil {

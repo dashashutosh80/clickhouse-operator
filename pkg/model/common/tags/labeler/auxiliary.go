@@ -16,13 +16,13 @@ package labeler
 
 import (
 	"fmt"
-	"github.com/altinity/clickhouse-operator/pkg/chop"
 	"strings"
 
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sLabels "k8s.io/apimachinery/pkg/labels"
 
 	api "github.com/altinity/clickhouse-operator/pkg/apis/clickhouse.altinity.com/v1"
+	"github.com/altinity/clickhouse-operator/pkg/chop"
 	"github.com/altinity/clickhouse-operator/pkg/util"
 )
 

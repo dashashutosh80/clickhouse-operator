@@ -43,6 +43,7 @@ import (
 	"github.com/altinity/clickhouse-operator/pkg/model/chi/tags/labeler"
 	commonCreator "github.com/altinity/clickhouse-operator/pkg/model/common/creator"
 	commonNormalizer "github.com/altinity/clickhouse-operator/pkg/model/common/normalizer"
+	"github.com/altinity/clickhouse-operator/pkg/model/k8s"
 	"github.com/altinity/clickhouse-operator/pkg/model/managers"
 	"github.com/altinity/clickhouse-operator/pkg/util"
 )
@@ -179,6 +180,13 @@ func (w *worker) shouldForceRestartHost(ctx context.Context, host *api.Host) boo
 		return true
 
 	case model.IsConfigurationChangeRequiresReboot(host):
+		if w.isImageChangeRequested(host) {
+			// Image is also changing — skip pre-restart to avoid the race where the old image
+			// starts with the new (potentially incompatible) config. The STS rolling update
+			// will restart the pod with the correct image + config.
+			w.a.V(1).M(host).F().Info("Config change requires restart, but image is also changing - deferring restart to STS rollout. Host: %s", host.GetName())
+			return false
+		}
 		w.a.V(1).M(host).F().Info("Config change(s) require host restart. Host: %s", host.GetName())
 		return true
 
@@ -190,6 +198,23 @@ func (w *worker) shouldForceRestartHost(ctx context.Context, host *api.Host) boo
 		w.a.V(1).M(host).F().Info("Host force restart is not required. Host: %s", host.GetName())
 		return false
 	}
+}
+
+// isImageChangeRequested reports whether the ClickHouse container image differs between
+// the current and desired StatefulSets, i.e. a version upgrade/downgrade is in progress.
+func (w *worker) isImageChangeRequested(host *api.Host) bool {
+	if host.Runtime.CurStatefulSet == nil || host.Runtime.DesiredStatefulSet == nil {
+		return false
+	}
+	curContainer, ok := k8s.StatefulSetContainerGet(host.Runtime.CurStatefulSet, config.ClickHouseContainerName, 0)
+	if !ok {
+		return false
+	}
+	desiredContainer, ok := k8s.StatefulSetContainerGet(host.Runtime.DesiredStatefulSet, config.ClickHouseContainerName, 0)
+	if !ok {
+		return false
+	}
+	return curContainer.Image != desiredContainer.Image
 }
 
 // ensureFinalizer installs the operator finalizer on the CR if not already present.

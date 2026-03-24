@@ -87,12 +87,12 @@ func (w *worker) reconcileCR(ctx context.Context, old, new *apiChk.ClickHouseKee
 			metrics.CRReconcilesCompleted(ctx, new)
 		}
 		return nil
-	case new.EnsureRuntime().ActionPlan.HasActionsToDo():
-		w.a.M(new).F().Info("ActionPlan has actions - continue reconcile")
+	case new.HasReconcileWork():
+		w.a.M(new).F().Info("CR has reconcile work - continue reconcile")
 	case w.isAfterFinalizerInstalled(new.GetAncestorT(), new):
 		w.a.M(new).F().Info("isAfterFinalizerInstalled - continue reconcile-2")
 	default:
-		w.a.M(new).F().Info("ActionPlan has no actions - abort reconcile")
+		w.a.M(new).F().Info("No reconcile work - abort reconcile")
 		metrics.CRReconcilesCompleted(ctx, new)
 		return nil
 	}
@@ -135,6 +135,8 @@ func (w *worker) reconcileCR(ctx context.Context, old, new *apiChk.ClickHouseKee
 func (w *worker) buildCR(ctx context.Context, _cr *apiChk.ClickHouseKeeperInstallation) *apiChk.ClickHouseKeeperInstallation {
 	cr := w.createTemplatedCR(_cr)
 	w.newTask(cr, cr.GetAncestorT())
+	// fillCurSTS must be called before findMinMaxVersions to ensure deterministic
+	w.fillCurSTS(ctx, cr)
 	w.findMinMaxVersions(ctx, cr)
 	common.LogOldAndNew("norm stage 1:", cr.GetAncestorT(), cr)
 
@@ -148,11 +150,12 @@ func (w *worker) buildCR(ctx context.Context, _cr *apiChk.ClickHouseKeeperInstal
 		opts.Templates = templates
 		cr = w.createTemplatedCR(_cr, opts)
 		w.newTask(cr, cr.GetAncestorT())
+		// fillCurSTS again because createTemplatedCR creates new host objects
+		w.fillCurSTS(ctx, cr)
 		w.findMinMaxVersions(ctx, cr)
 		common.LogOldAndNew("norm stage 2:", cr.GetAncestorT(), cr)
 	}
 
-	w.fillCurSTS(ctx, cr)
 	w.logSWVersion(ctx, cr)
 
 	actionPlan := api.MakeActionPlan(cr.GetAncestorT(), cr)
@@ -389,12 +392,25 @@ func (w *worker) reconcileHostStatefulSet(ctx context.Context, host *api.Host, o
 	w.a.V(1).M(host).F().Info("Reconcile host STS: %s. App version: %s", host.GetName(), host.Runtime.Version.Render())
 
 	// Start with force-restart host
+	forcedRestart := false
 	if w.shouldForceRestartHost(ctx, host) {
 		w.a.V(1).M(host).F().Info("Reconcile host STS force restart: %s", host.GetName())
 		_ = w.hostForceRestart(ctx, host, opts)
+		forcedRestart = true
 	}
 
 	w.stsReconciler.PrepareHostStatefulSetWithStatus(ctx, host, host.IsStopped())
+	// After a force restart the STS was scaled down to 0 replicas. PrepareHostStatefulSetWithStatus
+	// compares fingerprints of the desired STS (replicas=1) vs the current STS (replicas=0, set by
+	// hostScaleDown). In the current codebase these fingerprints differ, so ObjectStatusSame is not
+	// returned. However, this is a safety guard: if the fingerprints ever compare equal (e.g. due to
+	// a litter serialization quirk in a specific build), ObjectStatusSame would cause ReconcileStatefulSet
+	// to skip the update and leave the host at 0 replicas. Override to ObjectStatusModified to guarantee
+	// the scale-up always proceeds after a forced restart of a non-stopped host.
+	if forcedRestart && !host.IsStopped() && host.GetReconcileAttributes().GetStatus().Is(types.ObjectStatusSame) {
+		w.a.V(1).M(host).F().Info("Override ObjectStatusSame after force restart to ensure scale-up: %s", host.GetName())
+		host.GetReconcileAttributes().SetStatus(types.ObjectStatusModified)
+	}
 	opts = w.prepareStsReconcileOptsWaitSection(host, opts)
 
 	// We are in place, where we can  reconcile StatefulSet to desired configuration.
@@ -440,7 +456,14 @@ func (w *worker) hostScaleDown(ctx context.Context, host *api.Host, opts *statef
 	w.a.V(1).M(host).F().Info("Reconcile host. Host shutdown via scale down: %s", host.GetName())
 
 	w.stsReconciler.PrepareHostStatefulSetWithStatus(ctx, host, true)
-	err := w.stsReconciler.ReconcileStatefulSet(ctx, host, false, opts)
+	// Use WaitUntilReady so the reconciler waits for Status.ReadyReplicas to reach 0
+	// (i.e., the pod fully terminates) before returning. Without this wait, the
+	// subsequent scale-up in reconcileHostStatefulSet sees Status.ReadyReplicas=1 for
+	// a Spec.Replicas=0 STS, making IsStatefulSetReady return false. That triggers the
+	// ErrCRUDRecreate path, which deletes the STS and then fails to recreate it with
+	// "already exists" (async deletion not yet complete), leaving the STS stuck at 0.
+	scaleDownOpts := statefulset.NewReconcileStatefulSetOptions().SetWaitUntilReady()
+	err := w.stsReconciler.ReconcileStatefulSet(ctx, host, false, scaleDownOpts)
 	if err != nil {
 		w.a.V(1).M(host).F().Info("Host shutdown abort 1. Host: %s err: %v", host.GetName(), err)
 		return err

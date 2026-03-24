@@ -38,6 +38,9 @@ import (
 // Controller reconciles a ClickHouseKeeper object
 type Controller struct {
 	client.Client
+	// APIReader is a non-cached client.Reader for direct API-server reads.
+	// It is used by the STS client to avoid stale-cache races in the forced-restart path.
+	APIReader client.Reader
 	Scheme    *apiMachinery.Scheme
 	ExtClient apiExtensions.Interface
 
@@ -49,7 +52,7 @@ type Controller struct {
 
 func (c *Controller) new() {
 	c.namer = managers.NewNameManager(managers.NameManagerTypeKeeper)
-	c.kube = kube.NewAdapter(c.Client, c.namer)
+	c.kube = kube.NewAdapter(c.Client, c.APIReader, c.namer)
 	//labeler:                 NewLabeler(kube),
 	//pvcDeleter :=              volume.NewPVCDeleter(managers.NewNameManager(managers.NameManagerTypeKeeper))
 }
@@ -57,6 +60,14 @@ func (c *Controller) new() {
 func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	if util.IsContextDone(ctx) {
 		log.V(2).Info("task is done")
+		return ctrl.Result{}, nil
+	}
+
+	// Guard: skip namespaces outside the configured watch list.
+	// keeperPredicate() filters direct CHK events, but reconcile requests triggered by owned
+	// StatefulSet changes bypass it. This guard catches all paths including those.
+	if !chop.Config().IsNamespaceWatched(req.Namespace) {
+		log.V(2).Info("skip reconcile, namespace '%s' is not watched", req.Namespace)
 		return ctrl.Result{}, nil
 	}
 

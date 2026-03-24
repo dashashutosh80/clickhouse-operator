@@ -122,6 +122,9 @@ function copy_to_destination() {
         fi
     fi
 
+    # Copy operator-level ci.yaml (idempotent — same content on every release)
+    cp "${SRC_BUNDLE_DIR}/ci.yaml" "${DST_FOLDER}/ci.yaml"
+
     echo "  [OK]   Copied to: ${DST_FOLDER}"
 }
 
@@ -154,6 +157,7 @@ function commit_destination_repo() {
     local VERSION="$2"
 
     git -C "${REPO_ROOT}" add "operators/clickhouse/${VERSION}" || { echo "  [ERROR] git add failed in ${REPO_ROOT}"; return 1; }
+    git -C "${REPO_ROOT}" add "operators/clickhouse/ci.yaml" || true  # no-error if already staged / unchanged
     git -C "${REPO_ROOT}" commit -s -m "operator clickhouse (${VERSION})" || { echo "  [ERROR] git commit failed in ${REPO_ROOT}"; return 1; }
     git -C "${REPO_ROOT}" push --force || { echo "  [ERROR] git push failed in ${REPO_ROOT}"; return 1; }
 
@@ -164,6 +168,17 @@ echo ""
 for i in "${!REPO_ROOTS[@]}"; do
     commit_destination_repo "${REPO_ROOTS[$i]}" "${VERSION}"
 done
+
+##
+## Section 6: Commit generated hub manifests back to clickhouse-operator repo
+##
+
+echo ""
+echo "Committing hub manifests to clickhouse-operator repo ..."
+git -C "${SRC_ROOT}" add "deploy/operatorhub/" || { echo "  [ERROR] git add failed in ${SRC_ROOT}"; exit 1; }
+git -C "${SRC_ROOT}" commit -m "env: hub manifests" || { echo "  [ERROR] git commit failed in ${SRC_ROOT}"; exit 1; }
+git -C "${SRC_ROOT}" push altinity || { echo "  [ERROR] git push altinity failed in ${SRC_ROOT}"; exit 1; }
+echo "  [OK]   Committed and pushed hub manifests to altinity"
 
 echo ""
 echo "DONE"
