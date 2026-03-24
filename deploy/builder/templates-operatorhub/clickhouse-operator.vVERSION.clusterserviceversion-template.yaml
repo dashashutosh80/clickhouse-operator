@@ -23,7 +23,7 @@ metadata:
       "{HERE WILL BE THE EXAMPLES}"
 spec:
   version: ${OPERATOR_VERSION}
-  minKubeVersion: 1.12.6
+  minKubeVersion: 1.25.0
   maturity: alpha
   replaces: clickhouse-operator.v${PREVIOUS_OPERATOR_VERSION}
   maintainers:
