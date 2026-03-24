@@ -169,5 +169,16 @@ for i in "${!REPO_ROOTS[@]}"; do
     commit_destination_repo "${REPO_ROOTS[$i]}" "${VERSION}"
 done
 
+##
+## Section 6: Commit generated hub manifests back to clickhouse-operator repo
+##
+
+echo ""
+echo "Committing hub manifests to clickhouse-operator repo ..."
+git -C "${SRC_ROOT}" add "deploy/operatorhub/" || { echo "  [ERROR] git add failed in ${SRC_ROOT}"; exit 1; }
+git -C "${SRC_ROOT}" commit -m "env: hub manifests" || { echo "  [ERROR] git commit failed in ${SRC_ROOT}"; exit 1; }
+git -C "${SRC_ROOT}" push altinity || { echo "  [ERROR] git push altinity failed in ${SRC_ROOT}"; exit 1; }
+echo "  [OK]   Committed and pushed hub manifests to altinity"
+
 echo ""
 echo "DONE"
