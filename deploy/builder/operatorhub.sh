@@ -8,21 +8,9 @@ SRC_ROOT="$(realpath "${CUR_DIR}/../..")"
 
 # 0.9.3
 VERSION=$(cd "${SRC_ROOT}"; cat release)
-PREVIOUS_VERSION="${PREVIOUS_VERSION}"
-
-if [[ -z "${PREVIOUS_VERSION}" ]]; then
-    echo "PREVIOUS_VERSION is not specified. Unable to proceed."
-    echo "Abort."
-    exit 1
-fi
-
 echo "=================================================================================="
-echo "PREVIOUS_VERSION: ${PREVIOUS_VERSION}"
 echo "VERSION: ${VERSION}"
-echo "!!! IMPORTANT !!!"
-echo "Please, ensure PREVIOUS_VERSION=$PREVIOUS_VERSION is what is needed"
 echo "=================================================================================="
-read -n 1 -r -s -p $'Press enter to continue...\n'
 
 OPERATORHUB_DIR="${SRC_ROOT}/deploy/operatorhub"
 MANIFESTS_DIR="${OPERATORHUB_DIR}/${VERSION}"
@@ -79,10 +67,19 @@ rm "${EXAMPLES_FILE}"
 cat "${CVV_FILE_TEMPLATE}" | \
   OPERATOR_VERSION="${VERSION}" \
   OPERATOR_RELEASE_DATE=$(date +'%Y-%m-%dT%H:%M:%SZ') \
-  PREVIOUS_OPERATOR_VERSION="${PREVIOUS_VERSION}" \
   envsubst > "${CVV_FILE}"
 
 rm "${CVV_FILE_TEMPLATE}"
+
+# Inject spec.skips from releases file (versions that may not be in the IIB from-index)
+SKIPS_FILE="skips.yaml"
+grep -v '^$' "${SRC_ROOT}/releases" | while IFS= read -r v; do
+    echo "- clickhouse-operator.v${v}"
+done > "${SKIPS_FILE}"
+if [[ -s "${SKIPS_FILE}" ]]; then
+    yq -i ".spec.skips = load(\"${SKIPS_FILE}\")" "${CVV_FILE}"
+fi
+rm "${SKIPS_FILE}"
 
 #$CHIT.crd.yaml
 #$CONF.crd.yaml
