@@ -23,9 +23,9 @@ metadata:
       "{HERE WILL BE THE EXAMPLES}"
 spec:
   version: ${OPERATOR_VERSION}
-  minKubeVersion: 1.25.0
+  minKubeVersion: 1.16.0
   maturity: alpha
-  replaces: clickhouse-operator.v${PREVIOUS_OPERATOR_VERSION}
+  replaces: clickhouse-operator.v0.26.0
   maintainers:
     - email: support@altinity.com
       name: Altinity
