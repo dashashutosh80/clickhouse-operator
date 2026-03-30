@@ -50,21 +50,27 @@ spec:
         - |
           set -e
           echo "Installing/Updating ClickHouse Operator CRDs..."
-          for crd_file in /crds/*.yaml; do
+          for crd_file in /crds/*/*.yaml; do
             echo "Applying $(basename $crd_file)..."
             kubectl apply --server-side=true --force-conflicts -f "$crd_file"
           done
           echo "CRD installation completed successfully"
         volumeMounts:
-        - name: crds
-          mountPath: /crds
+        - name: crds-1
+          mountPath: /crds/1
+          readOnly: true
+        - name: crds-2
+          mountPath: /crds/2
           readOnly: true
         {{- with .Values.crdHook.resources }}
         resources:
           {{- toYaml . | nindent 10 }}
         {{- end }}
       volumes:
-      - name: crds
+      - name: crds-1
         configMap:
-          name: {{ include "altinity-clickhouse-operator.fullname" . }}-crds
+          name: {{ include "altinity-clickhouse-operator.fullname" . }}-crds-1
+      - name: crds-2
+        configMap:
+          name: {{ include "altinity-clickhouse-operator.fullname" . }}-crds-2
 {{- end }}
