@@ -38,6 +38,16 @@ crdHook:
   affinity: {}
   # crdHook.annotations -- additional annotations for CRD installation job
   annotations: {}
+  # crdHook.containerSecurityContext -- container security context for CRD installation job
+  # check `kubectl explain pod.spec.containers.securityContext` for details
+  containerSecurityContext: {}
+  #  allowPrivilegeEscalation: false
+  #  capabilities:
+  #    drop:
+  #      - ALL
+  #  runAsNonRoot: true
+  #  seccompProfile:
+  #    type: RuntimeDefault
 operator:
   image:
     # operator.image.registry -- optional image registry prefix (e.g. 1234567890.dkr.ecr.us-east-1.amazonaws.com)
