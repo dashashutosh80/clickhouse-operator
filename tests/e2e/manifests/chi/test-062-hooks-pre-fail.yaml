@@ -1,0 +1,17 @@
+apiVersion: "clickhouse.altinity.com/v1"
+kind: "ClickHouseInstallation"
+metadata:
+  name: test-062-hooks
+spec:
+  configuration:
+    clusters:
+      - name: default
+        reconcile:
+          hooks:
+            pre:
+              - sql:
+                  queries:
+                    - "SELECT throwIf(1, 'pre_hook_intentional_failure')"
+        layout:
+          shardsCount: 1
+          replicasCount: 1

@@ -1,0 +1,18 @@
+apiVersion: "clickhouse.altinity.com/v1"
+kind: "ClickHouseInstallation"
+metadata:
+  name: test-062-hooks
+spec:
+  configuration:
+    clusters:
+      - name: default
+        reconcile:
+          hooks:
+            pre:
+              - sql:
+                  queries:
+                    - "SELECT 'allhosts_hook_marker'"
+                target: allHosts
+        layout:
+          shardsCount: 2
+          replicasCount: 1

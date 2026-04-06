@@ -1,0 +1,21 @@
+apiVersion: "clickhouse.altinity.com/v1"
+kind: "ClickHouseInstallation"
+metadata:
+  name: test-062-hooks
+spec:
+  configuration:
+    clusters:
+      - name: default
+        reconcile:
+          hooks:
+            pre:
+              - sql:
+                  queries:
+                    - "SELECT 'cluster_pre_hook_marker'"
+            post:
+              - sql:
+                  queries:
+                    - "SELECT 'cluster_post_hook_marker'"
+        layout:
+          shardsCount: 1
+          replicasCount: 1
