@@ -470,8 +470,17 @@ type OperatorConfigReconcileRuntime struct {
 
 // ReconcileHost defines reconcile host config
 type ReconcileHost struct {
-	Wait ReconcileHostWait `json:"wait" yaml:"wait"`
-	Drop ReconcileHostDrop `json:"drop" yaml:"drop"`
+	Wait  ReconcileHostWait `json:"wait" yaml:"wait"`
+	Drop  ReconcileHostDrop `json:"drop" yaml:"drop"`
+	Hooks *ReconcileHooks   `json:"hooks,omitempty" yaml:"hooks,omitempty"`
+}
+
+// GetHooks returns host-level hooks or nil.
+func (rh *ReconcileHost) GetHooks() *ReconcileHooks {
+	if rh == nil {
+		return nil
+	}
+	return rh.Hooks
 }
 
 func (rh ReconcileHost) Normalize() ReconcileHost {
@@ -483,6 +492,7 @@ func (rh ReconcileHost) Normalize() ReconcileHost {
 func (rh ReconcileHost) MergeFrom(from ReconcileHost) ReconcileHost {
 	rh.Wait = rh.Wait.MergeFrom(from.Wait)
 	rh.Drop = rh.Drop.MergeFrom(from.Drop)
+	rh.Hooks = rh.Hooks.MergeFrom(from.Hooks)
 	return rh
 }
 
