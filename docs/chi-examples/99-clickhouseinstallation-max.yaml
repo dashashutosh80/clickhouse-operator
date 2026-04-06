@@ -190,6 +190,18 @@ spec:
           onLostVolume: yes
           # Whether the operator during reconcile procedure should drop active replicas when replica is deleted or recreated
           active: no
+      # Optional, hooks to execute before/after each host reconcile.
+      # Hooks defined at CHI level are inherited by all clusters.
+      # Hooks are skipped on first CHI creation (no live hosts yet).
+      hooks:
+        pre:
+          - sql:
+              queries:
+                - "SYSTEM STOP REPLICATION QUEUES"
+        post:
+          - sql:
+              queries:
+                - "SYSTEM START REPLICATION QUEUES"
 
     macros:
       sections:
@@ -333,6 +345,27 @@ spec:
             reconcileShardsThreadsNumber: 5
             # Max percentage of concurrent shard reconciles within one cluster in progress
             reconcileShardsMaxConcurrencyPercent: 50
+
+          # Optional, cluster-level hooks to execute before/after cluster reconcile.
+          # Cluster hooks run ONCE per cluster (not per host).
+          # For cluster hooks, `target` controls where SQL executes:
+          #   - firstHost (default): one host, suitable for ON CLUSTER queries
+          #   - allHosts:            every host in the cluster
+          #   - allShards:           first replica of each shard
+          # Hooks are skipped on first cluster creation (no live hosts yet).
+          hooks:
+            pre:
+              - sql:
+                  queries:
+                    - "DETACH TABLE IF EXISTS db.kafka_table ON CLUSTER '{cluster}' PERMANENTLY"
+            post:
+              - sql:
+                  queries:
+                    - "ATTACH TABLE db.kafka_table ON CLUSTER '{cluster}'"
+              - sql:
+                  queries:
+                    - "SYSTEM FLUSH LOGS"
+                  target: allHosts
 
           host:
             # Whether the operator during reconcile procedure should wait for a ClickHouse host:
