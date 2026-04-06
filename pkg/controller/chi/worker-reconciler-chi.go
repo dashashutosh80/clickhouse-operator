@@ -575,9 +575,18 @@ func (w *worker) reconcileCluster(ctx context.Context, cluster *api.Cluster) err
 	if err := w.reconcileClusterZookeeperRootPath(cluster); err != nil {
 		return err
 	}
+
+	// Cluster pre-hooks: failure aborts cluster reconcile
+	if err := w.runClusterPreHooks(ctx, cluster); err != nil {
+		return err
+	}
+
 	if err := w.reconcileClusterShardsAndHosts(ctx, cluster); err != nil {
 		return err
 	}
+
+	// Cluster post-hooks: best-effort, logged but don't fail reconcile
+	w.runClusterPostHooks(ctx, cluster)
 
 	return nil
 }
@@ -730,6 +739,11 @@ func (w *worker) reconcileHost(ctx context.Context, host *api.Host) error {
 
 	w.a.V(1).M(host).F().Info("Reconcile host: %s. App version: %s", host.GetName(), host.Runtime.Version.Render())
 
+	// Host pre-hooks: failure aborts this host's reconcile
+	if err := w.runHostPreHooks(ctx, host); err != nil {
+		return err
+	}
+
 	if err := w.reconcileHostPrepare(ctx, host); err != nil {
 		return err
 	}
@@ -766,6 +780,9 @@ func (w *worker) reconcileHost(ctx context.Context, host *api.Host) error {
 			},
 		},
 	})
+
+	// Host post-hooks: best-effort, logged but don't fail reconcile
+	w.runHostPostHooks(ctx, host)
 
 	// Host reconcile completed successfully - add it to monitoring
 	w.addHostToMonitoring(host)
