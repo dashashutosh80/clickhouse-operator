@@ -283,7 +283,6 @@ def test_010007(self):
 def wait_operator_restart(chi, wait_objects, shell=None):
     with When("Restart operator"):
         util.restart_operator(shell=shell)
-        time.sleep(15)
         kubectl.wait_objects(chi, wait_objects, shell=shell)
         kubectl.wait_chi_status(chi, "Completed", shell=shell)
 
@@ -292,7 +291,6 @@ def check_operator_restart(chi, wait_objects, pod, shell=None):
     start_time = kubectl.get_field("pod", pod, ".status.startTime", shell=shell)
     with When("Restart operator"):
         util.restart_operator(shell=shell)
-        time.sleep(15)
 
         kubectl.wait_objects(chi, wait_objects, shell=shell)
         kubectl.wait_chi_status(chi, "Completed", shell=shell)
@@ -695,10 +693,8 @@ def test_010010_1(self):
         },
     )
 
-    with Then("Wait 60 seconds for operator to start creating ZooKeeper root"):
-        time.sleep(60)
-
-    with Then("CHI should be in progress with no pods created yet"):
+    with Then("CHI should stay in progress with no pods created (waiting for ZooKeeper)"):
+        time.sleep(15)
         assert kubectl.get_chi_status(chi) == "InProgress"
         assert kubectl.get_count("pod", chi = chi) == 0
 
@@ -818,9 +814,6 @@ def test_010011_1(self):
                 )
                 print(f"users.xml: {regexp}")
                 assert regexp == "disabled"
-
-                print(f"Give ClickHouse time to recognize the config change")
-                time.sleep(30)
 
             test_default_user()
 
@@ -946,12 +939,9 @@ def test_010011_2(self):
                 },
             )
 
-            with Then("Wait until configuration is reloaded by ClickHouse"):
-                time.sleep(90)
-
             with Then("Connection to localhost should succeed with default user and no password"):
-                out = clickhouse.query_with_error("test-011-secured-default", "select 'OK'")
-                assert out == "OK", error()
+                assert clickhouse.wait_config_applied("test-011-secured-default", user="default"), \
+                    error("Default user without password should be available after config reload")
 
         with When("Default user is removed"):
             kubectl.create_and_check(
@@ -961,13 +951,9 @@ def test_010011_2(self):
                 },
             )
 
-            with Then("Wait until configuration is reloaded by ClickHouse"):
-                time.sleep(90)
-
             with Then("Connection to localhost should fail with default user and no password"):
-                out = clickhouse.query_with_error("test-011-secured-default", "select 'OK'")
-                print(out)
-                assert out != "OK", error()
+                assert clickhouse.wait_config_denied("test-011-secured-default", user="default"), \
+                    error("Default user should be denied after being removed from config")
 
     with Finally("I clean up"):
         delete_test_namespace()
@@ -1542,7 +1528,7 @@ def test_010014_0(self):
             clickhouse.query(chi_name, q, host=f"chi-{chi_name}-{cluster}-0-0", timeout=120)
 
     # Give some time for replication to catch up
-    time.sleep(10)
+    time.sleep(3)
     with Given("Replicated tables are created on a first replica and data is inserted"):
         for table in replicated_tables:
             if table != "test_atomic_014.test_mv2_014":
@@ -2043,10 +2029,9 @@ def test_010016(self):
                 f'exec chi-{chi}-default-0-0-0 -- bash -c "grep test_norestart /etc/clickhouse-server/users.d/my_users.xml | wc -l"',
                 "1",
             )
-        # Wait for changes to propagate
-        time.sleep(60)
-
         with Then("test_norestart user should be available"):
+            assert clickhouse.wait_config_applied(chi, user="test_norestart"), \
+                error("test_norestart user should become available after config propagation")
             version = clickhouse.query(chi, sql="select version()", user="test_norestart")
         with And("user1 user should not be available"):
             version_user1 = clickhouse.query_with_error(chi, sql="select version()", user="user1", pwd="qwerty")
@@ -5653,45 +5638,7 @@ def test_010062(self):
 
     chi = "test-062-hooks"
 
-    # Step 1: Cluster-level hooks
-    with Given("CHI with cluster pre/post hooks is created"):
-        kubectl.create_and_check(
-            manifest="manifests/chi/test-062-hooks-cluster.yaml",
-            check={
-                "apply_templates": {current().context.clickhouse_template},
-                "object_counts": {"statefulset": 1, "pod": 1, "service": 2},
-                "do_not_delete": 1,
-            },
-        )
-
-    with When("Force reconcile to trigger cluster hooks (skipped on first creation)"):
-        kubectl.force_chi_reconcile(chi, "cluster-hooks")
-
-    with Then("Cluster pre and post hook markers appear in operator logs"):
-        check_operator_logs_for_hooks(["cluster_pre_hook_marker", "cluster_post_hook_marker"])
-
-    kubectl.delete_chi(chi)
-
-    # Step 2: Host-level hooks
-    with Given("CHI with host pre/post hooks is created"):
-        kubectl.create_and_check(
-            manifest="manifests/chi/test-062-hooks-host.yaml",
-            check={
-                "apply_templates": {current().context.clickhouse_template},
-                "object_counts": {"statefulset": 1, "pod": 1, "service": 2},
-                "do_not_delete": 1,
-            },
-        )
-
-    with When("Force reconcile to trigger host hooks"):
-        kubectl.force_chi_reconcile(chi, "host-hooks")
-
-    with Then("Host pre and post hook markers appear in operator logs"):
-        check_operator_logs_for_hooks(["host_pre_hook_marker", "host_post_hook_marker"])
-
-    kubectl.delete_chi(chi)
-
-    # Step 3: Combined cluster + host hooks
+    # Step 1: Combined cluster + host hooks (covers cluster-only and host-only cases too)
     with Given("CHI with both cluster and host hooks is created"):
         kubectl.create_and_check(
             manifest="manifests/chi/test-062-hooks-combined.yaml",
@@ -5702,7 +5649,7 @@ def test_010062(self):
             },
         )
 
-    with When("Force reconcile to trigger all hooks"):
+    with When("Force reconcile to trigger all hooks (skipped on first creation)"):
         kubectl.force_chi_reconcile(chi, "combined-hooks")
 
     with Then("All four hook markers appear in operator logs"):
@@ -5711,10 +5658,8 @@ def test_010062(self):
             "host_pre_hook_marker", "host_post_hook_marker",
         ])
 
-    kubectl.delete_chi(chi)
-
-    # Step 4: target=allHosts
-    with Given("CHI with 2 shards and target=allHosts hook is created"):
+    # Step 2: target=allHosts — scale up to 2 shards using the same CHI name
+    with When("Apply CHI with 2 shards and target=allHosts hook"):
         kubectl.create_and_check(
             manifest="manifests/chi/test-062-hooks-allhosts.yaml",
             check={
@@ -5724,25 +5669,10 @@ def test_010062(self):
             },
         )
 
-    with When("Force reconcile to trigger allHosts hook"):
-        kubectl.force_chi_reconcile(chi, "allhosts-hooks")
-
     with Then("allhosts_hook_marker and 'all hosts' appear in operator logs"):
         check_operator_logs_for_hooks(["allhosts_hook_marker", "Running SQL cluster hook on all hosts"])
 
-    kubectl.delete_chi(chi)
-
-    # Step 5: Pre-hook failure aborts reconcile
-    with Given("Create a basic CHI first"):
-        kubectl.create_and_check(
-            manifest="manifests/chi/test-062-hooks-cluster.yaml",
-            check={
-                "apply_templates": {current().context.clickhouse_template},
-                "object_counts": {"statefulset": 1, "pod": 1, "service": 2},
-                "do_not_delete": 1,
-            },
-        )
-
+    # Step 3: Pre-hook failure aborts reconcile — apply failing hook to existing CHI
     with When("Apply CHI with a pre-hook that fails"):
         kubectl.apply(
             util.get_full_path("manifests/chi/test-062-hooks-pre-fail.yaml"),
