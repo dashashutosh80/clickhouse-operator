@@ -13,5 +13,5 @@ spec:
                   queries:
                     - "SELECT throwIf(1, 'pre_hook_intentional_failure')"
         layout:
-          shardsCount: 1
+          shardsCount: 2
           replicasCount: 1
