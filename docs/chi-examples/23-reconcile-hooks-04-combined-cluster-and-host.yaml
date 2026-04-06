@@ -1,0 +1,49 @@
+# Reconcile hooks: Combined cluster-level and host-level hooks
+#
+# Cluster hooks and host hooks serve different scopes and can be
+# used together:
+#
+# Execution order during reconcile:
+#   1. Cluster pre-hooks  (once, before any host is touched)
+#   2. For each host:
+#      a. Host pre-hooks  (per host, before host reconcile)
+#      b. Host reconcile  (restart, config update, etc.)
+#      c. Host post-hooks (per host, after host reconcile)
+#   3. Cluster post-hooks (once, after all hosts are done)
+#
+# This example detaches Kafka tables cluster-wide before the rolling
+# restart, pauses replication on each host individually, and reverses
+# everything in post-hooks.
+
+apiVersion: "clickhouse.altinity.com/v1"
+kind: "ClickHouseInstallation"
+metadata:
+  name: "hooks-combined"
+spec:
+  reconcile:
+    host:
+      hooks:
+        pre:
+          - sql:
+              queries:
+                - "SYSTEM STOP REPLICATION QUEUES"
+        post:
+          - sql:
+              queries:
+                - "SYSTEM START REPLICATION QUEUES"
+  configuration:
+    clusters:
+      - name: "main"
+        reconcile:
+          hooks:
+            pre:
+              - sql:
+                  queries:
+                    - "DETACH TABLE IF EXISTS db.kafka_events ON CLUSTER '{cluster}' PERMANENTLY"
+            post:
+              - sql:
+                  queries:
+                    - "ATTACH TABLE db.kafka_events ON CLUSTER '{cluster}'"
+        layout:
+          shardsCount: 2
+          replicasCount: 2
