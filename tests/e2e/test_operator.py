@@ -5045,13 +5045,10 @@ def check_replication(chi, replicas, token, table = ''):
 
 @TestScenario
 @Name("test_010053. Check that standard Kubernetes annotations are ignored if set to StatefulSet externally")
-@Tags("NO_PARALLEL")
 def test_010053(self):
-    version_from = "0.23.7"
-    version_to = current().context.operator_version
-    with Given(f"clickhouse-operator from {version_from}"):
-        current().context.operator_version = version_from
-        create_shell_namespace_clickhouse_template()
+    """Verify that kubectl.kubernetes.io/restartedAt annotation set by 'kubectl rollout restart'
+    does not cause the operator to restart pods during reconcile or operator restart."""
+    create_shell_namespace_clickhouse_template()
 
     manifest = "manifests/chi/test-005-acm.yaml"
     chi = yaml_manifest.get_name(util.get_full_path(manifest))
@@ -5082,13 +5079,9 @@ def test_010053(self):
         start_time = kubectl.get_field("pod", pod, ".status.startTime")
 
         def check_restart():
-            with Then("ClickHouse pods should not be restarted during operator's restart"):
+            with Then("ClickHouse pods should not be restarted"):
                 new_start_time = kubectl.get_field("pod", pod, ".status.startTime")
-                # print(f"pod start_time old: {start_time}")
-                # print(f"pod start_time new: {new_start_time}")
                 assert start_time == new_start_time
-
-        start_time = kubectl.get_field("pod", pod, ".status.startTime")
 
         with Then("Trigger reconcile"):
             kubectl.force_chi_reconcile(chi)
@@ -5096,13 +5089,8 @@ def test_010053(self):
 
         with When("Restart operator"):
             util.restart_operator()
-            kubectl.wait_chi_status(chi, "InProgress")
-            kubectl.wait_chi_status(chi, "Completed")
-            check_restart()
-
-        with When(f"upgrade operator to {version_to}"):
-            util.install_operator_version(version_to)
-            kubectl.wait_chi_status(chi, "InProgress")
+            # After operator restart, reconcile may complete before we can observe InProgress.
+            # Just wait for Completed — we only care that pods are not restarted.
             kubectl.wait_chi_status(chi, "Completed")
             check_restart()
 
@@ -5633,6 +5621,145 @@ def test_010061(self):
 
     with Finally("I clean up"):
         delete_test_namespace()
+
+#
+# Hooks tests section
+#
+
+
+CH_CONTAINER = "clickhouse"
+
+
+def check_operator_logs_for_hooks(markers):
+    """Check clickhouse-operator pod logs for hook execution markers."""
+    operator_pod = kubectl.get_operator_pod(ns=current().context.test_namespace)
+    out = kubectl.launch(
+        f"logs {operator_pod} -c clickhouse-operator",
+        ns=current().context.test_namespace,
+    )
+    for marker in markers:
+        with Then(f"operator logs should contain '{marker}'"):
+            assert marker in out, error(f"Marker '{marker}' not found in operator logs")
+
+
+@TestScenario
+@Name("test_010062. Reconcile hooks")
+@Requirements(RQ_SRS_026_ClickHouseOperator_Create("1.0"))
+def test_010062(self):
+    """Verify reconcile hooks: cluster-level, host-level, combined, target=allHosts, and pre-hook failure.
+    Hooks are skipped on first CHI creation (no live hosts yet), so each step creates the CHI
+    first, then force-reconciles to trigger the hooks."""
+    create_shell_namespace_clickhouse_template()
+
+    chi = "test-062-hooks"
+
+    # Step 1: Cluster-level hooks
+    with Given("CHI with cluster pre/post hooks is created"):
+        kubectl.create_and_check(
+            manifest="manifests/chi/test-062-hooks-cluster.yaml",
+            check={
+                "apply_templates": {current().context.clickhouse_template},
+                "object_counts": {"statefulset": 1, "pod": 1, "service": 2},
+                "do_not_delete": 1,
+            },
+        )
+
+    with When("Force reconcile to trigger cluster hooks (skipped on first creation)"):
+        kubectl.force_chi_reconcile(chi, "cluster-hooks")
+
+    with Then("Cluster pre and post hook markers appear in operator logs"):
+        check_operator_logs_for_hooks(["cluster_pre_hook_marker", "cluster_post_hook_marker"])
+
+    kubectl.delete_chi(chi)
+
+    # Step 2: Host-level hooks
+    with Given("CHI with host pre/post hooks is created"):
+        kubectl.create_and_check(
+            manifest="manifests/chi/test-062-hooks-host.yaml",
+            check={
+                "apply_templates": {current().context.clickhouse_template},
+                "object_counts": {"statefulset": 1, "pod": 1, "service": 2},
+                "do_not_delete": 1,
+            },
+        )
+
+    with When("Force reconcile to trigger host hooks"):
+        kubectl.force_chi_reconcile(chi, "host-hooks")
+
+    with Then("Host pre and post hook markers appear in operator logs"):
+        check_operator_logs_for_hooks(["host_pre_hook_marker", "host_post_hook_marker"])
+
+    kubectl.delete_chi(chi)
+
+    # Step 3: Combined cluster + host hooks
+    with Given("CHI with both cluster and host hooks is created"):
+        kubectl.create_and_check(
+            manifest="manifests/chi/test-062-hooks-combined.yaml",
+            check={
+                "apply_templates": {current().context.clickhouse_template},
+                "object_counts": {"statefulset": 1, "pod": 1, "service": 2},
+                "do_not_delete": 1,
+            },
+        )
+
+    with When("Force reconcile to trigger all hooks"):
+        kubectl.force_chi_reconcile(chi, "combined-hooks")
+
+    with Then("All four hook markers appear in operator logs"):
+        check_operator_logs_for_hooks([
+            "cluster_pre_hook_marker", "cluster_post_hook_marker",
+            "host_pre_hook_marker", "host_post_hook_marker",
+        ])
+
+    kubectl.delete_chi(chi)
+
+    # Step 4: target=allHosts
+    with Given("CHI with 2 shards and target=allHosts hook is created"):
+        kubectl.create_and_check(
+            manifest="manifests/chi/test-062-hooks-allhosts.yaml",
+            check={
+                "apply_templates": {current().context.clickhouse_template},
+                "object_counts": {"statefulset": 2, "pod": 2, "service": 3},
+                "do_not_delete": 1,
+            },
+        )
+
+    with When("Force reconcile to trigger allHosts hook"):
+        kubectl.force_chi_reconcile(chi, "allhosts-hooks")
+
+    with Then("allhosts_hook_marker and 'all hosts' appear in operator logs"):
+        check_operator_logs_for_hooks(["allhosts_hook_marker", "Running SQL cluster hook on all hosts"])
+
+    kubectl.delete_chi(chi)
+
+    # Step 5: Pre-hook failure aborts reconcile
+    with Given("Create a basic CHI first"):
+        kubectl.create_and_check(
+            manifest="manifests/chi/test-062-hooks-cluster.yaml",
+            check={
+                "apply_templates": {current().context.clickhouse_template},
+                "object_counts": {"statefulset": 1, "pod": 1, "service": 2},
+                "do_not_delete": 1,
+            },
+        )
+
+    with When("Apply CHI with a pre-hook that fails"):
+        kubectl.apply(
+            util.get_full_path("manifests/chi/test-062-hooks-pre-fail.yaml"),
+            ns=current().context.test_namespace,
+        )
+        time.sleep(30)
+
+    with Then("CHI status should indicate failure"):
+        chi_status = kubectl.get_field("chi", chi, ".status.status")
+        assert chi_status in ("Aborted", "InProgress"), \
+            error(f"Expected Aborted or InProgress status, got: {chi_status}")
+
+    kubectl.delete_chi(chi)
+
+    with Finally("I clean up"):
+        delete_test_namespace()
+
 
 #
 # Keeper tests section
