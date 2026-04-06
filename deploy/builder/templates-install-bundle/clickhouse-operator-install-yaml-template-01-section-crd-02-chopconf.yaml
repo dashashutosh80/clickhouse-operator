@@ -437,6 +437,56 @@ spec:
                                   <<: *TypeStringBool
                                   description: |
                                     Whether the operator during reconcile procedure should drop active replicas when replica is deleted or recreated
+                        hooks:
+                          type: object
+                          description: "default host-level hooks to execute before and after host reconcile"
+                          properties:
+                            pre:
+                              type: array
+                              description: "actions to execute before host reconcile"
+                              nullable: true
+                              items: &TypeHookActionChop
+                                type: object
+                                properties:
+                                  sql:
+                                    type: object
+                                    properties:
+                                      queries:
+                                        type: array
+                                        nullable: true
+                                        items:
+                                          type: string
+                                  shell:
+                                    type: object
+                                    properties:
+                                      command:
+                                        type: array
+                                        nullable: true
+                                        items:
+                                          type: string
+                                      container:
+                                        type: string
+                                  http:
+                                    type: object
+                                    properties:
+                                      url:
+                                        type: string
+                                      method:
+                                        type: string
+                                  target:
+                                    type: string
+                                    description: "where to execute hook: firstHost (default), allHosts, allShards"
+                                    enum:
+                                      - ""
+                                      - "firstHost"
+                                      - "allHosts"
+                                      - "allShards"
+                            post:
+                              type: array
+                              description: "actions to execute after host reconcile"
+                              nullable: true
+                              items:
+                                <<: *TypeHookActionChop
                 annotation:
                   type: object
                   description: "defines which metadata.annotations items will include or exclude during render StatefulSet, Pod, PVC resources"
