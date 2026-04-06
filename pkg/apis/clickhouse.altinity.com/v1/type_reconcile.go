@@ -46,6 +46,8 @@ type ClusterReconcile struct {
 	StatefulSet ReconcileStatefulSet `json:"statefulSet,omitempty" yaml:"statefulSet,omitempty"`
 	// Host specifies host-lever reconcile settings
 	Host ReconcileHost `json:"host" yaml:"host"`
+	// Hooks specifies pre/post actions for cluster-level reconcile
+	Hooks *ReconcileHooks `json:"hooks,omitempty" yaml:"hooks,omitempty"`
 }
 
 // ReconcileStatefulSet defines StatefulSet reconcile settings
@@ -101,6 +103,14 @@ func (reconcile *ClusterReconcile) Ensure() *ClusterReconcile {
 		reconcile = &ClusterReconcile{}
 	}
 	return reconcile
+}
+
+// GetHooks returns cluster-level hooks or nil.
+func (reconcile *ClusterReconcile) GetHooks() *ReconcileHooks {
+	if reconcile == nil {
+		return nil
+	}
+	return reconcile.Hooks
 }
 
 // NewChiReconcile creates new reconcile
