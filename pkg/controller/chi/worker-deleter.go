@@ -382,7 +382,7 @@ func (w *worker) hasHostVolumesToRetain(ctx context.Context, host *api.Host) (ha
 	// Check whether among all PVCs host has reclaim policy "retain" specified
 	storage.NewStoragePVC(w.c.kube.Storage()).WalkDiscoveredPVCs(ctx, host, func(pvc *core.PersistentVolumeClaim) {
 		if chiLabeler.New(nil).GetReclaimPolicy(pvc.GetObjectMeta()) == api.PVCReclaimPolicyRetain {
-			w.a.V(1).F().Info("PVC: %s/%s blocks drop replica. Reclaim policy: %s", api.PVCReclaimPolicyRetain.String())
+			w.a.V(1).F().Info("PVC: %s/%s blocks drop replica. Reclaim policy: %s", pvc.Namespace, pvc.Name, api.PVCReclaimPolicyRetain.String())
 			has = true
 		}
 	})
