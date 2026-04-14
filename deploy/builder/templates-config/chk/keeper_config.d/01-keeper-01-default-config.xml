@@ -2,10 +2,12 @@
     <asynchronous_metrics_keeper_metrics_only>1</asynchronous_metrics_keeper_metrics_only>
     <keeper_server>
         <coordination_settings>
+            <async_replication>1</async_replication>
             <min_session_timeout_ms>10000</min_session_timeout_ms>
             <operation_timeout_ms>10000</operation_timeout_ms>
             <raft_logs_level>information</raft_logs_level>
             <session_timeout_ms>100000</session_timeout_ms>
+            <use_xid_64>1</use_xid_64>
         </coordination_settings>
         <hostname_checks_enabled>true</hostname_checks_enabled>
         <log_storage_path>/var/lib/clickhouse-keeper/coordination/logs</log_storage_path>
