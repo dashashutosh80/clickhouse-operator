@@ -69,7 +69,7 @@ spec:
           containers:
             - name: clickhouse-keeper
               imagePullPolicy: IfNotPresent
-              image: "docker.io/clickhouse/clickhouse-keeper:23.8.16"
+              image: "clickhouse/clickhouse-keeper:25.8"
               # resources:
               #  requests:
               #    memory: "256Mi"

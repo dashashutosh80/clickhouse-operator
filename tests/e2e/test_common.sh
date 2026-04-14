@@ -36,7 +36,6 @@ NO_CLEANUP="${NO_CLEANUP:-""}"
 
 PRELOAD_IMAGES_OPERATOR=(
     # ClickHouse server versions used in manifests and templates
-    "clickhouse/clickhouse-server:23.3"
     "clickhouse/clickhouse-server:23.8"
     "clickhouse/clickhouse-server:24.3"
     "clickhouse/clickhouse-server:24.8"
@@ -49,8 +48,6 @@ PRELOAD_IMAGES_OPERATOR=(
     # ClickHouse Keeper versions used in operator tests
     "clickhouse/clickhouse-keeper:25.3"
     "clickhouse/clickhouse-keeper:25.8"
-    "clickhouse/clickhouse-keeper:24.3.5.46"
-    "docker.io/clickhouse/clickhouse-keeper:23.8.16"
     # Zookeeper
     "docker.io/zookeeper:3.8.4"
     # Misc
@@ -74,9 +71,9 @@ PRELOAD_IMAGES_KEEPER=(
     # ClickHouse Keeper versions
     "clickhouse/clickhouse-keeper:25.3"
     "clickhouse/clickhouse-keeper:25.8"
-    "clickhouse/clickhouse-keeper:24.3.5.46"
-    "docker.io/clickhouse/clickhouse-keeper:23.8.16"
-    "altinity/clickhouse-keeper:24.3.5.48.altinityfips"
+    "clickhouse/clickhouse-keeper:25.8"
+    "docker.io/clickhouse/clickhouse-keeper:25.8"
+    "altinity/clickhouse-keeper:25.3.8.30001.altinityfips"
     # Zookeeper
     "docker.io/zookeeper:3.8.4"
 )
