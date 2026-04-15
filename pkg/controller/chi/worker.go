@@ -175,18 +175,17 @@ func (w *worker) shouldForceRestartHost(ctx context.Context, host *api.Host) boo
 		w.a.V(1).M(host).F().Info("Host has no ancestor, no restart applicable. Host: %s", host.GetName())
 		return false
 
+	// Check for image changes BEFORE checking RollingUpdate to avoid race condition
+	// where old image starts with new (potentially incompatible) config during upgrades
+	case w.isImageChangeRequested(host):
+		w.a.V(1).M(host).F().Info("Image change detected - deferring restart to STS rollout. Host: %s", host.GetName())
+		return false
+
 	case host.GetCR().IsRollingUpdate():
 		w.a.V(1).M(host).F().Info("RollingUpdate requires force restart. Host: %s", host.GetName())
 		return true
 
 	case model.IsConfigurationChangeRequiresReboot(host):
-		if w.isImageChangeRequested(host) {
-			// Image is also changing — skip pre-restart to avoid the race where the old image
-			// starts with the new (potentially incompatible) config. The STS rolling update
-			// will restart the pod with the correct image + config.
-			w.a.V(1).M(host).F().Info("Config change requires restart, but image is also changing - deferring restart to STS rollout. Host: %s", host.GetName())
-			return false
-		}
 		w.a.V(1).M(host).F().Info("Config change(s) require host restart. Host: %s", host.GetName())
 		return true
 
